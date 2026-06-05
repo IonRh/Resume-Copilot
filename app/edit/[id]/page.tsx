@@ -1,12 +1,13 @@
 "use client"
 
-import { use, useMemo, useState } from "react"
+import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import ResumeBuilder from "@/components/resume-builder"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@iconify/react"
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { getResumeById, updateEntryData, StorageError } from "@/lib/storage"
+import { saveLocalJsonBackup } from "@/lib/file-backup"
 import { useToast } from "@/hooks/use-toast"
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,12 +15,18 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const router = useRouter()
   const { toast } = useToast()
   const [, setCurrentData] = useState<ResumeData | null>(null)
+  const [entry, setEntry] = useState<StoredResume | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
-  const entry = useMemo<StoredResume | null>(() => getResumeById(id), [id])
+  useEffect(() => {
+    setEntry(getResumeById(id))
+    setLoaded(true)
+  }, [id])
 
   const handleSave = async (data: ResumeData) => {
     try {
       const updated = updateEntryData(id, data)
+      await saveLocalJsonBackup(id, updated.resumeData).catch(() => false)
       toast({ title: "保存成功", description: new Date(updated.updatedAt).toLocaleString() })
     } catch (e: unknown) {
       if (e instanceof StorageError && e.code === "QUOTA_EXCEEDED") {
@@ -35,7 +42,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     }
   }
 
-  if (!entry) {
+  if (loaded && !entry) {
     return (
       <main className="min-h-screen bg-background p-6">
         <div className="flex items-center gap-3">
@@ -48,10 +55,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
+  if (!loaded || !entry) {
+    return <main className="min-h-screen bg-background" />
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <ResumeBuilder
         initialData={entry.resumeData}
+        entryId={id}
         onChange={setCurrentData}
         onBack={() => router.push("/")}
         onSave={(data) => handleSave(data)}

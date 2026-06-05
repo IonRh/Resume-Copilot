@@ -1,4 +1,6 @@
-﻿export const runtime = "nodejs";
+﻿import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
@@ -54,6 +56,7 @@ export async function POST(
   ctx: { params: Promise<{ filename: string }> | { filename: string } }
 ) {
   try {
+    configureChromiumRuntimeEnv();
     const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
       import("@sparticuz/chromium"),
       import("puppeteer-core"),
@@ -272,4 +275,3 @@ export async function GET(
     });
   }
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useMemo } from "react"
+import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -12,9 +12,15 @@ import ResumePreview from "@/components/resume-preview"
 export default function ViewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const entry = useMemo<StoredResume | null>(() => getResumeById(id), [id])
+  const [entry, setEntry] = useState<StoredResume | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
-  if (!entry) {
+  useEffect(() => {
+    setEntry(getResumeById(id))
+    setLoaded(true)
+  }, [id])
+
+  if (loaded && !entry) {
     return (
       <main className="min-h-screen bg-background p-6">
         <div className="flex items-center gap-3">
@@ -25,6 +31,10 @@ export default function ViewPage({ params }: { params: Promise<{ id: string }> }
         </div>
       </main>
     )
+  }
+
+  if (!loaded || !entry) {
+    return <main className="min-h-screen bg-background" />
   }
 
   return (

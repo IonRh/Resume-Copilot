@@ -1,9 +1,12 @@
+import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 60;
 
 export async function GET() {
   try {
+    configureChromiumRuntimeEnv();
     const { default: chromium } = await import("@sparticuz/chromium");
     const { default: puppeteer } = await import("puppeteer-core");
     const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH || "";

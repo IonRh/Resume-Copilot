@@ -71,6 +71,7 @@ function NewEditPageContent() {
         // 优先使用：克隆数据 > 预加载数据
         initialData={clonedData ?? prefetchedData}
         template={useExample ? "example" : "default"}
+        entryId={undefined}
         onBack={() => router.push("/")}
         onSave={(d) => handleSave(d)}
       />

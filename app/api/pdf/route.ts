@@ -1,4 +1,6 @@
-﻿export const runtime = "nodejs";
+﻿import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -33,6 +35,7 @@ async function toDataUrlIfRemote(url?: string): Promise<string | undefined> {
 
 export async function POST(req: Request) {
   try {
+    configureChromiumRuntimeEnv();
     const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
       import("@sparticuz/chromium"),
       import("puppeteer-core"),

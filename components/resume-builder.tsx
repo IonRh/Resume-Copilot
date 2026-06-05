@@ -12,6 +12,8 @@ import { Icon } from "@iconify/react"
 import type { ResumeData, EditorState } from "@/types/resume"
 import { createDefaultResumeData } from "@/lib/utils"
 import { loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
+import { bindLocalJsonFile, hasLocalJsonBinding, isLocalJsonPersistenceSupported, saveLocalJsonBackup } from "@/lib/file-backup"
+import { useToast } from "@/hooks/use-toast"
 import ResumePreview from "./resume-preview"
 import PersonalInfoEditor from "./personal-info-editor"
 import JobIntentionEditor from "./job-intention-editor"
@@ -63,14 +65,15 @@ ViewModeSelector.displayName = "ViewModeSelector"
 /**
  * 简历构建器主组件
  */
-export default function ResumeBuilder({ initialData, template = "default", onChange, onSave, onBack }: { initialData?: ResumeData; template?: "default" | "example"; onChange?: (data: ResumeData) => void; onSave?: (data: ResumeData) => void; onBack?: () => void }) {
+export default function ResumeBuilder({ initialData, template = "default", entryId, onChange, onSave, onBack }: { initialData?: ResumeData; template?: "default" | "example"; entryId?: string; onChange?: (data: ResumeData) => void; onSave?: (data: ResumeData) => void; onBack?: () => void }) {
   const [editorState, setEditorState] = useState<EditorState>({
     resumeData: initialData ?? createDefaultResumeData(),
     isEditing: true,
     showPreview: true,
   })
-
   const [viewMode, setViewMode] = useState<ViewMode>("both")
+  const [jsonBound, setJsonBound] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => {
     if (initialData) return
@@ -84,6 +87,22 @@ export default function ResumeBuilder({ initialData, template = "default", onCha
     }
     loadTemplate()
   }, [initialData, template])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!entryId || !isLocalJsonPersistenceSupported()) {
+      setJsonBound(false)
+      return
+    }
+    void hasLocalJsonBinding(entryId).then((bound) => {
+      if (!cancelled) setJsonBound(bound)
+    }).catch(() => {
+      if (!cancelled) setJsonBound(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [entryId])
 
   // initialData 仅用于初始值；避免在 effect 中同步 setState 触发级联渲染
   const handleViewModeChange = useCallback((mode: ViewMode) => {
@@ -105,6 +124,36 @@ export default function ResumeBuilder({ initialData, template = "default", onCha
   useEffect(() => {
     onChange?.(editorState.resumeData)
   }, [editorState.resumeData, onChange])
+
+  useEffect(() => {
+    if (!entryId || !jsonBound) return
+    const timer = window.setTimeout(() => {
+      void saveLocalJsonBackup(entryId, editorState.resumeData).then((saved) => {
+        if (!saved) {
+          setJsonBound(false)
+        }
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "本地 JSON 自动持久化失败"
+        toast({ title: "JSON 持久化失败", description: message, variant: "destructive" })
+      })
+    }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [entryId, jsonBound, editorState.resumeData, toast])
+
+  const handleBindJson = useCallback(async () => {
+    if (!entryId) {
+      toast({ title: "请先保存", description: "新建简历需要先保存一次，才能绑定本地 JSON 文件。" })
+      return
+    }
+    try {
+      const filename = await bindLocalJsonFile(entryId, editorState.resumeData)
+      setJsonBound(true)
+      toast({ title: "绑定成功", description: `后续编辑会自动同步到 ${filename}` })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "绑定本地 JSON 失败"
+      toast({ title: "绑定失败", description: message, variant: "destructive" })
+    }
+  }, [entryId, editorState.resumeData, toast])
 
   return (
     <div className="resume-editor">
@@ -147,6 +196,18 @@ export default function ResumeBuilder({ initialData, template = "default", onCha
             >
               <Icon icon="mdi:content-save" className="w-4 h-4" />
               保存
+            </Button>
+          ) : null}
+
+          {isLocalJsonPersistenceSupported() ? (
+            <Button
+              size="sm"
+              variant={jsonBound ? "outline" : "default"}
+              onClick={() => void handleBindJson()}
+              className="gap-2"
+            >
+              <Icon icon={jsonBound ? "mdi:file-sync" : "mdi:file-link"} className="w-4 h-4" />
+              {jsonBound ? "已绑定 JSON" : "绑定 JSON"}
             </Button>
           ) : null}
 
