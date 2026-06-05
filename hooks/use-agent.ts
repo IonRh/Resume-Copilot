@@ -18,29 +18,20 @@ export function useAgent() {
   const historyRef = useRef<ChatMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
 
+  // 最近一次请求时的选中态，供「重试」复用
+  const lastSelectionRef = useRef<WorkspaceSelection | null>(null)
+
   const stop = useCallback(() => {
     abortRef.current?.abort()
     setRunning(false)
   }, [])
 
-  const send = useCallback(
-    async (rawText: string, opts?: { selection?: WorkspaceSelection | null }) => {
-      const text = rawText.trim()
-      if (!text || running) return
-
-      const selection = opts?.selection ?? ws.selection
+  // 抽出的运行循环：复用于首次发送与失败重试。historyRef 已含本轮用户消息。
+  const runLoop = useCallback(
+    async (assistantId: string, selection: WorkspaceSelection | null) => {
       setError(null)
       setRunning(true)
-
-      // UI：用户回合 + 助手回合（流式）
-      ws.addTurn({
-        id: genId("turn"),
-        role: "user",
-        content: text,
-        selectionLabel: selection?.label,
-      })
-      const assistantId = genId("turn")
-      ws.addTurn({ id: assistantId, role: "assistant", content: "", streaming: true })
+      ws.updateTurn(assistantId, (t) => ({ ...t, streaming: true, error: false }))
 
       const system: ChatMessage = {
         role: "system",
@@ -51,10 +42,6 @@ export function useAgent() {
           mode: ws.mode,
         }),
       }
-
-      let userContent = text
-      if (selection) userContent = `（选中：${selection.label}）\n${text}`
-      historyRef.current.push({ role: "user", content: userContent })
 
       const controller = new AbortController()
       abortRef.current = controller
@@ -158,10 +145,51 @@ export function useAgent() {
         abortRef.current = null
       }
     },
-    [running, ws],
+    [ws],
   )
 
-  return { send, stop, running, error }
+  const send = useCallback(
+    async (rawText: string, opts?: { selection?: WorkspaceSelection | null }) => {
+      const text = rawText.trim()
+      if (!text || running) return
+
+      const selection = opts?.selection ?? ws.selection
+      lastSelectionRef.current = selection
+
+      ws.addTurn({
+        id: genId("turn"),
+        role: "user",
+        content: text,
+        selectionLabel: selection?.label,
+      })
+      const assistantId = genId("turn")
+      ws.addTurn({ id: assistantId, role: "assistant", content: "", streaming: true })
+
+      let userContent = text
+      if (selection) userContent = `（选中：${selection.label}）\n${text}`
+      historyRef.current.push({ role: "user", content: userContent })
+
+      await runLoop(assistantId, selection)
+    },
+    [running, ws, runLoop],
+  )
+
+  // 重试：复用 historyRef 中最后一条用户消息，不新增用户气泡。
+  const retry = useCallback(async () => {
+    if (running) return
+    // 回退到最后一条 user 消息，丢弃失败那轮产生的 assistant/tool 残留
+    const hist = historyRef.current
+    let lastUser = hist.length - 1
+    while (lastUser >= 0 && hist[lastUser].role !== "user") lastUser--
+    if (lastUser < 0) return
+    historyRef.current = hist.slice(0, lastUser + 1)
+
+    const assistantId = genId("turn")
+    ws.addTurn({ id: assistantId, role: "assistant", content: "", streaming: true })
+    await runLoop(assistantId, lastSelectionRef.current)
+  }, [running, ws, runLoop])
+
+  return { send, retry, stop, running, error }
 }
 
 function stepLabel(tool: string): string {
@@ -184,6 +212,7 @@ function stepLabel(tool: string): string {
     present_score_report: "生成评分诊断",
     present_jd_match: "分析 JD 匹配",
     present_interview_questions: "准备面试问题",
+    present_interview_report: "生成面试报告",
   }
   return map[tool] || tool
 }

@@ -62,6 +62,25 @@ function buildRow(spec: RowSpec, order: number): ModuleContentRow {
   return { id: genId("row"), type: "rich", columns, elements, order }
 }
 
+/** 结构变更的可视化预览：把一行/一个 spec 拍平成可读文本（用于 diff 卡） */
+function specPreview(spec: RowSpec): string {
+  if (spec.type === "tags") return `标签：${(spec.tags || []).map(String).join("、")}`
+  return (spec.texts || []).map(String).filter(Boolean).join("  ｜  ")
+}
+
+function rowPreview(row: ModuleContentRow): string {
+  if (row.type === "tags") return `标签：${(row.tags || []).join("、")}`
+  return row.elements
+    .map((e) => docToText(e.content))
+    .filter(Boolean)
+    .join("  ｜  ")
+}
+
+function modulePreview(title: string, rowTexts: string[]): string {
+  const lines = rowTexts.filter(Boolean)
+  return [`模块「${title}」`, ...lines].join("\n")
+}
+
 function buildModule(title: string, rows: RowSpec[] | undefined, order: number): ResumeModule {
   return {
     id: genId("mod"),
@@ -224,7 +243,7 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         op: name,
         summary: `新增模块「${title}」`,
         targetIds: [],
-        note: `${(rows || []).length} 行`,
+        after: modulePreview(title, (rows || []).map(specPreview)),
         apply: (d) => {
           const newModule = buildModule(title, rows, d.modules.length)
           const list = [...d.modules]
@@ -497,7 +516,12 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         summary: str(args.summary) || undefined,
         suggestions: (Array.isArray(args.suggestions) ? args.suggestions : []).map((s) => {
           const o = (s || {}) as Args
-          return { section: str(o.section), advice: str(o.advice), prompt: str(o.prompt) || undefined }
+          return {
+            section: str(o.section),
+            advice: str(o.advice),
+            prompt: str(o.prompt) || undefined,
+            targetIds: Array.isArray(o.targetIds) ? o.targetIds.map(String) : undefined,
+          }
         }),
       }
       return { ok: true, message: "已展示 JD 匹配卡片。", card }
@@ -513,6 +537,21 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         }),
       }
       return { ok: true, message: "已展示模拟面试卡片。", card }
+    }
+
+    case "present_interview_report": {
+      const card: AgentCard = {
+        type: "interview_report",
+        overall: int(args.overall) ?? 0,
+        summary: str(args.summary) || undefined,
+        items: (Array.isArray(args.items) ? args.items : []).map((it) => {
+          const o = (it || {}) as Args
+          return { question: str(o.question), score: int(o.score) ?? 0, comment: str(o.comment) || undefined }
+        }),
+        strengths: Array.isArray(args.strengths) ? args.strengths.map(String) : undefined,
+        improvements: Array.isArray(args.improvements) ? args.improvements.map(String) : undefined,
+      }
+      return { ok: true, message: "已展示面试表现报告。", card }
     }
 
     default:

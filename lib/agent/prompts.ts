@@ -88,7 +88,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     tagline: "岗位匹配 · 关键词对齐",
     icon: "mdi:target",
     guide:
-      "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。每条建议尽量附带可执行 prompt，便于用户一键让你直接改写对应元素。用户确认后再用 update_element_text 等工具落地修改。",
+      "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。每条建议尽量附带可执行 prompt，并在 targetIds 中填写该建议涉及的简历元素 id（element/row/module，可先用 get_resume 获取），以便用户点击「定位」滚动高亮到对应位置。用户确认后再用 update_element_text 等工具落地修改。",
     suggestions: ["对照 JD 分析匹配度", "把缺失关键词自然融入工作经历", "按该岗位重排我的项目顺序"],
     intake: {
       title: "JD 匹配优化",
@@ -131,7 +131,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     tagline: "出题 · 点评 · 追问",
     icon: "mdi:account-voice",
     guide:
-      "当前为「模拟面试」模式：基于简历（及上方目标岗位信息）进行文本模拟面试。首轮必须调用 present_interview_questions 给出问题清单（每题含考察点与作答提示）。此后用户逐题作答，你给予针对性点评、打分与追问，深挖项目细节与 STAR 结构，此阶段无需再调用工具。保持面试官口吻，一次聚焦 1-2 个问题。",
+      "当前为「模拟面试」模式：基于简历（及上方目标岗位信息）进行文本模拟面试。首轮必须调用 present_interview_questions 给出问题清单（每题含考察点与作答提示）。此后用户逐题作答，你给予针对性点评、打分与追问，深挖项目细节与 STAR 结构，此阶段无需再调用工具。保持面试官口吻，一次聚焦 1-2 个问题。当用户表示结束面试、或已完成大部分问题作答时，调用 present_interview_report 输出表现报告（综合分、逐题评分点评、优势与待提升）。",
     suggestions: ["开始模拟面试", "针对我的项目经历深挖提问", "这道题我该怎么答更好"],
     intake: {
       title: "模拟面试",

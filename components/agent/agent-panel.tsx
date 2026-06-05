@@ -7,7 +7,14 @@ import { useResumeWorkspace } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import type { AgentMode, AgentTurn } from "@/lib/agent/types"
-import { DiffCard, InterviewCard, JdCard, ScoreCard, ToolStepView } from "./agent-cards"
+import {
+  DiffCard,
+  InterviewCard,
+  InterviewReportCard,
+  JdCard,
+  ScoreCard,
+  ToolStepView,
+} from "./agent-cards"
 import { Markdown } from "./markdown"
 
 // 编辑器三分屏内仅保留贴合「编辑工作流」的模式；JD 匹配 / 模拟面试为各自专注页（lockedMode）。
@@ -25,7 +32,7 @@ export default function AgentPanel({
   lockedMode?: AgentMode
 }) {
   const ws = useResumeWorkspace()
-  const { send, stop, running, error } = useAgent()
+  const { send, retry, stop, running, error } = useAgent()
   const [input, setInput] = useState("")
   const [mention, setMention] = useState<{ active: boolean; query: string; index: number }>({
     active: false,
@@ -212,7 +219,14 @@ export default function AgentPanel({
               </div>
             </div>
           ) : (
-            ws.turns.map((turn) => <TurnView key={turn.id} turn={turn} onApply={(p) => submit(p)} />)
+            ws.turns.map((turn) => (
+              <TurnView
+                key={turn.id}
+                turn={turn}
+                onApply={(p) => submit(p)}
+                onRetry={running ? undefined : retry}
+              />
+            ))
           )}
 
           {error ? (
@@ -308,7 +322,15 @@ export default function AgentPanel({
   )
 }
 
-function TurnView({ turn, onApply }: { turn: AgentTurn; onApply: (prompt: string) => void }) {
+function TurnView({
+  turn,
+  onApply,
+  onRetry,
+}: {
+  turn: AgentTurn
+  onApply: (prompt: string) => void
+  onRetry?: () => void
+}) {
   if (turn.role === "user") {
     return (
       <div className="flex flex-col items-end">
@@ -357,9 +379,21 @@ function TurnView({ turn, onApply }: { turn: AgentTurn; onApply: (prompt: string
             if (card.type === "score") return <ScoreCard key={i} card={card} />
             if (card.type === "jd") return <JdCard key={i} card={card} onApply={onApply} />
             if (card.type === "interview") return <InterviewCard key={i} card={card} />
+            if (card.type === "interview_report") return <InterviewReportCard key={i} card={card} />
             return null
           })
         : null}
+
+      {turn.error && onRetry ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 w-fit gap-1 bg-transparent text-xs"
+          onClick={onRetry}
+        >
+          <Icon icon="mdi:refresh" className="h-3.5 w-3.5" /> 重试
+        </Button>
+      ) : null}
     </div>
   )
 }

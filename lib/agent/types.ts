@@ -83,6 +83,8 @@ export interface JdSuggestion {
   advice: string
   /** 一键应用时发送给 Agent 的指令 */
   prompt?: string
+  /** 该建议涉及的简历元素 id（module/row/element），用于点击定位高亮 */
+  targetIds?: string[]
 }
 
 export interface JdCard {
@@ -106,7 +108,22 @@ export interface InterviewCard {
   questions: InterviewQuestion[]
 }
 
-export type AgentCard = ScoreCard | JdCard | InterviewCard
+export interface InterviewReportItem {
+  question: string
+  score: number
+  comment?: string
+}
+
+export interface InterviewReportCard {
+  type: "interview_report"
+  overall: number
+  summary?: string
+  items: InterviewReportItem[]
+  strengths?: string[]
+  improvements?: string[]
+}
+
+export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard
 
 /* ---------- 对话回合（UI 层） ---------- */
 

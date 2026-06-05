@@ -1,14 +1,81 @@
 "use client"
 
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import { useResumeWorkspace } from "@/lib/agent/store"
+import { runCheckup } from "@/lib/agent/checkup"
 import PersonalInfoEditor from "@/components/personal-info-editor"
 import JobIntentionEditor from "@/components/job-intention-editor"
 import ModuleEditor from "@/components/module-editor"
+
+/** 编辑器顶部的主动体检提示条 */
+function CheckupBanner() {
+  const ws = useResumeWorkspace()
+  const [dismissed, setDismissed] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const issues = useMemo(() => runCheckup(ws.resumeData), [ws.resumeData])
+
+  if (dismissed || issues.length === 0) return null
+
+  const warnCount = issues.filter((i) => i.level === "warn").length
+
+  const fix = (prompt: string) => {
+    ws.setMode("edit")
+    ws.setAgentOpen(true)
+    ws.setKickoff(prompt)
+  }
+
+  return (
+    <Card className="border-amber-300/60 bg-amber-50/60 p-3 dark:bg-amber-950/20">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          className="flex min-w-0 items-center gap-2 text-left"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          <Icon icon="mdi:stethoscope" className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="text-sm font-medium">
+            简历体检：发现 {issues.length} 项可优化
+            {warnCount ? <span className="text-amber-600">（{warnCount} 项建议优先处理）</span> : null}
+          </span>
+          <Icon
+            icon={collapsed ? "mdi:chevron-down" : "mdi:chevron-up"}
+            className="h-4 w-4 shrink-0 text-muted-foreground"
+          />
+        </button>
+        <button
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => setDismissed(true)}
+          title="忽略本次体检"
+        >
+          <Icon icon="mdi:close" className="h-4 w-4" />
+        </button>
+      </div>
+
+      {!collapsed ? (
+        <ul className="mt-2 space-y-1.5">
+          {issues.map((it) => (
+            <li key={it.id} className="flex items-start justify-between gap-2 text-xs">
+              <span className="min-w-0">
+                <span className="font-medium">{it.title}</span>
+                <span className="text-muted-foreground"> · {it.detail}</span>
+              </span>
+              <button
+                className="shrink-0 whitespace-nowrap text-primary hover:underline"
+                onClick={() => fix(it.prompt)}
+              >
+                让 AI 修
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
+  )
+}
 
 /**
  * 左侧手工编辑面板：读取共享 store，所有改动经 updateResume 写回。
@@ -21,6 +88,8 @@ export default function EditorPanel({ dense = false }: { dense?: boolean }) {
 
   return (
     <div className={dense ? "p-4 space-y-4" : "p-6 space-y-6"}>
+      <CheckupBanner />
+
       {/* 简历标题编辑 */}
       <Card className="p-4">
         <div className="space-y-4">

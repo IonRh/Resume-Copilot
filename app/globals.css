@@ -736,6 +736,27 @@
   border-color: color-mix(in oklab, #22c55e 30%, transparent);
 }
 
+/* 词级差异：删除/新增在同一段内高亮 */
+.diff-merged {
+  background: var(--muted);
+  border-color: var(--border);
+}
+
+.diff-word-del {
+  background: color-mix(in oklab, #ef4444 18%, transparent);
+  color: color-mix(in oklab, #ef4444 45%, var(--foreground));
+  text-decoration: line-through;
+  border-radius: 0.2rem;
+  padding: 0 0.1rem;
+}
+
+.diff-word-ins {
+  background: color-mix(in oklab, #22c55e 22%, transparent);
+  color: color-mix(in oklab, #16a34a 55%, var(--foreground));
+  border-radius: 0.2rem;
+  padding: 0 0.1rem;
+}
+
 .diff-actions {
   display: flex;
   gap: 0.5rem;

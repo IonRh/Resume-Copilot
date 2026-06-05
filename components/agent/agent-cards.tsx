@@ -4,13 +4,52 @@ import { useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { useResumeWorkspace } from "@/lib/agent/store"
+import { diffWords } from "@/lib/agent/word-diff"
 import type {
   ChangeKind,
   InterviewCard as InterviewCardType,
+  InterviewReportCard as InterviewReportCardType,
   JdCard as JdCardType,
   ScoreCard as ScoreCardType,
   ToolStep,
 } from "@/lib/agent/types"
+
+/** 滚动并高亮简历预览中的目标元素（依赖预览的 data-* 属性） */
+function locateInPreview(ids: string[]) {
+  if (typeof document === "undefined" || ids.length === 0) return
+  for (const id of ids) {
+    const el =
+      document.querySelector(`[data-element-id="${id}"]`) ||
+      document.querySelector(`[data-row-id="${id}"]`) ||
+      document.querySelector(`[data-module-id="${id}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      return
+    }
+  }
+}
+
+/** 词级差异渲染：删除红色删除线，新增绿色 */
+function WordDiff({ before, after }: { before: string; after: string }) {
+  const segs = diffWords(before, after)
+  return (
+    <>
+      {segs.map((s, i) =>
+        s.op === "equal" ? (
+          <span key={i}>{s.text}</span>
+        ) : s.op === "delete" ? (
+          <span key={i} className="diff-word-del">
+            {s.text}
+          </span>
+        ) : (
+          <span key={i} className="diff-word-ins">
+            {s.text}
+          </span>
+        ),
+      )}
+    </>
+  )
+}
 
 const KIND_META: Record<ChangeKind, { icon: string; label: string }> = {
   text: { icon: "mdi:format-text", label: "文本" },
@@ -53,10 +92,17 @@ export function DiffCard({ changeId }: { changeId: string }) {
 
       <div className="diff-body">
         {hasTextDiff ? (
-          <>
-            {change.before ? <div className="diff-text diff-before">{change.before}</div> : null}
-            <div className="diff-text diff-after">{change.after || "（清空）"}</div>
-          </>
+          change.before && change.after ? (
+            // 前后都有内容：词级差异，一栏看清增删
+            <div className="diff-text diff-merged">
+              <WordDiff before={change.before} after={change.after} />
+            </div>
+          ) : (
+            <>
+              {change.before ? <div className="diff-text diff-before">{change.before}</div> : null}
+              <div className="diff-text diff-after">{change.after || "（清空）"}</div>
+            </>
+          )
         ) : (
           <div className="text-muted-foreground">{change.note || "结构调整"}</div>
         )}
@@ -153,6 +199,11 @@ export function ScoreCard({ card }: { card: ScoreCardType }) {
 }
 
 export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: string) => void }) {
+  const ws = useResumeWorkspace()
+  const locate = (ids: string[]) => {
+    ws.setHighlight(ids)
+    locateInPreview(ids)
+  }
   return (
     <div className="analysis-card">
       <div className="analysis-card-head">
@@ -201,16 +252,28 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
               <div key={i} className="rounded-lg border border-border p-2">
                 <div className="text-xs font-medium">{s.section}</div>
                 <p className="mt-0.5 text-xs text-muted-foreground">{s.advice}</p>
-                {s.prompt ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-1.5 h-6 gap-1 bg-transparent text-[11px]"
-                    onClick={() => onApply(s.prompt as string)}
-                  >
-                    <Icon icon="mdi:auto-fix" className="h-3 w-3" /> 让 AI 应用
-                  </Button>
-                ) : null}
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {s.targetIds?.length ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 gap-1 bg-transparent text-[11px]"
+                      onClick={() => locate(s.targetIds as string[])}
+                    >
+                      <Icon icon="mdi:crosshairs-gps" className="h-3 w-3" /> 定位
+                    </Button>
+                  ) : null}
+                  {s.prompt ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 gap-1 bg-transparent text-[11px]"
+                      onClick={() => onApply(s.prompt as string)}
+                    >
+                      <Icon icon="mdi:auto-fix" className="h-3 w-3" /> 让 AI 应用
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -270,6 +333,102 @@ export function InterviewCard({ card }: { card: InterviewCardType }) {
         <p className="pt-1 text-[11px] text-muted-foreground">
           在下方输入你的回答，我会逐题点评并追问。
         </p>
+      </div>
+    </div>
+  )
+}
+
+function reportToMarkdown(card: InterviewReportCardType): string {
+  const lines: string[] = [
+    `# 模拟面试表现报告`,
+    "",
+    `**综合得分：${card.overall} / 100**`,
+    "",
+  ]
+  if (card.summary) lines.push(card.summary, "")
+  lines.push("## 逐题评分", "")
+  card.items.forEach((it, i) => {
+    lines.push(`${i + 1}. (${it.score}/100) ${it.question}`)
+    if (it.comment) lines.push(`   - ${it.comment}`)
+  })
+  if (card.strengths?.length) {
+    lines.push("", "## 优势", ...card.strengths.map((s) => `- ${s}`))
+  }
+  if (card.improvements?.length) {
+    lines.push("", "## 待提升", ...card.improvements.map((s) => `- ${s}`))
+  }
+  return lines.join("\n")
+}
+
+export function InterviewReportCard({ card }: { card: InterviewReportCardType }) {
+  const exportReport = () => {
+    if (typeof document === "undefined") return
+    const blob = new Blob([reportToMarkdown(card)], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `面试表现报告-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="analysis-card">
+      <div className="analysis-card-head">
+        <Icon icon="mdi:clipboard-text-clock-outline" className="h-4 w-4" /> 面试表现报告
+      </div>
+      <div className="space-y-3 p-3">
+        <div className="flex items-center gap-3">
+          <div className="score-ring" style={{ ["--val" as string]: String(card.overall) }}>
+            {card.overall}
+          </div>
+          <div className="text-sm text-muted-foreground">{card.summary || "本场模拟面试综合表现"}</div>
+        </div>
+
+        <div className="space-y-2">
+          {card.items.map((it, i) => (
+            <div key={i} className="rounded-lg border border-border p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 text-xs font-medium">
+                  {i + 1}. {it.question}
+                </div>
+                <span className="kw-chip shrink-0 text-[10px]">{it.score}</span>
+              </div>
+              {it.comment ? <p className="mt-1 text-xs text-muted-foreground">{it.comment}</p> : null}
+            </div>
+          ))}
+        </div>
+
+        {card.strengths?.length ? (
+          <div>
+            <div className="mb-1 text-xs font-semibold">优势</div>
+            <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+              {card.strengths.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {card.improvements?.length ? (
+          <div>
+            <div className="mb-1 text-xs font-semibold">待提升</div>
+            <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+              {card.improvements.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 w-full gap-1 bg-transparent text-xs"
+          onClick={exportReport}
+        >
+          <Icon icon="mdi:download" className="h-3.5 w-3.5" /> 导出报告（Markdown）
+        </Button>
       </div>
     </div>
   )

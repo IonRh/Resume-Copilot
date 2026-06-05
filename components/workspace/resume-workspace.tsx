@@ -87,9 +87,13 @@ function WorkspaceInner({
   const [viewMode, setViewMode] = useState<ViewMode>("both")
   const [jsonBound, setJsonBound] = useState(false)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
+  // 仅客户端可判定的能力（File System Access API）延迟到挂载后再渲染，避免 SSR/CSR 水合不一致
+  const [mounted, setMounted] = useState(false)
   const kickoffReadRef = useRef(false)
 
   const { resumeData, setInitial } = ws
+
+  useEffect(() => setMounted(true), [])
 
   // 主页「求职工具」入口会写入 sessionStorage，进入工作区后自动呼出 AI 并发起对应任务。
   useEffect(() => {
@@ -269,7 +273,7 @@ function WorkspaceInner({
             </Button>
           ) : null}
 
-          {isLocalJsonPersistenceSupported() ? (
+          {mounted && isLocalJsonPersistenceSupported() ? (
             <Button
               size="sm"
               variant={jsonBound ? "outline" : "default"}

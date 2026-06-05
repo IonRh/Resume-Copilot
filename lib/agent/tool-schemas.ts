@@ -388,6 +388,11 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
                 section: { type: "string", description: "涉及的模块/部分" },
                 advice: { type: "string" },
                 prompt: { type: "string", description: "用户一键应用时发给你的具体指令" },
+                targetIds: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "该建议涉及的简历元素 id（element/row/module），用户点击「定位」会滚动并高亮这些元素",
+                },
               },
               required: ["section", "advice"],
             },
@@ -423,6 +428,36 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "present_interview_report",
+      description:
+        "在模拟面试结束时，基于用户作答展示一份表现报告卡片（综合分、逐题评分与点评、优势与待提升）。仅在已经历若干轮问答后调用。",
+      parameters: {
+        type: "object",
+        properties: {
+          overall: { type: "integer", description: "综合得分 0-100" },
+          summary: { type: "string", description: "一句话总评" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                question: { type: "string" },
+                score: { type: "integer", description: "该题得分 0-100" },
+                comment: { type: "string", description: "针对该题作答的点评" },
+              },
+              required: ["question", "score"],
+            },
+          },
+          strengths: { type: "array", items: { type: "string" } },
+          improvements: { type: "array", items: { type: "string" } },
+        },
+        required: ["overall", "items"],
+      },
+    },
+  },
 ]
 
 /** 仅这些工具不会产生需要审阅的变更 */
@@ -431,4 +466,5 @@ export const READONLY_TOOLS = new Set([
   "present_score_report",
   "present_jd_match",
   "present_interview_questions",
+  "present_interview_report",
 ])

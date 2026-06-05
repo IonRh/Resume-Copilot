@@ -6,8 +6,10 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
-import { updateEntryData } from "@/lib/storage"
+import { createEntryFromData, updateEntryData } from "@/lib/storage"
 import { saveLocalJsonBackup } from "@/lib/file-backup"
+import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
 import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
@@ -39,8 +41,28 @@ function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
   const profile = AGENT_PROFILES[mode]
   const briefingReadRef = useRef(false)
   const skipFirstSaveRef = useRef(true)
+  const { toast } = useToast()
+  const router = useRouter()
 
   const { resumeData } = ws
+
+  // 另存为针对该岗位的定制版本（不覆盖原简历）
+  const saveAsVariant = useCallback(() => {
+    try {
+      const baseTitle = resumeData.title || "我的简历"
+      const variant: ResumeData = { ...resumeData, title: `${baseTitle}（岗位定制版）` }
+      const entry = createEntryFromData(variant)
+      void saveLocalJsonBackup(entry.id, entry.resumeData).catch(() => false)
+      toast({ title: "已另存定制版", description: `「${variant.title}」已保存到我的简历` })
+      router.push(`/edit/${entry.id}`)
+    } catch (e) {
+      toast({
+        title: "保存失败",
+        description: e instanceof Error ? e.message : "未知错误",
+        variant: "destructive",
+      })
+    }
+  }, [resumeData, toast, router])
 
   // 读取 intake 阶段的简报，设置上下文并自动发起首条指令（仅一次）
   useEffect(() => {
@@ -118,6 +140,17 @@ function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
             </Button>
           </div>
           <Separator orientation="vertical" className="hidden h-6 sm:block" />
+          {mode === "jd" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={saveAsVariant}
+              className="hidden gap-2 bg-transparent md:inline-flex"
+              title="把当前优化结果另存为针对该岗位的定制简历"
+            >
+              <Icon icon="mdi:content-save-plus-outline" className="h-4 w-4" /> 另存定制版
+            </Button>
+          ) : null}
           <ExportButton resumeData={resumeData} size="sm" />
         </div>
       </div>
