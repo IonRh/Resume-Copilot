@@ -9,6 +9,9 @@ interface RequestBody {
   messages: ChatMessage[]
   /** 仅在该轮需要工具时为 true（如纯文本追问可关闭以省 token） */
   useTools?: boolean
+  /** 覆盖工具集（如 intake 仅挂 finish_intake）。优先级高于 useTools */
+  tools?: unknown[]
+  toolChoice?: unknown
   temperature?: number
 }
 
@@ -46,7 +49,10 @@ export async function POST(req: Request) {
     stream: true,
     temperature: body.temperature ?? 0.4,
   }
-  if (body.useTools !== false) {
+  if (Array.isArray(body.tools)) {
+    payload.tools = body.tools
+    payload.tool_choice = body.toolChoice ?? "auto"
+  } else if (body.useTools !== false) {
     payload.tools = TOOL_SCHEMAS
     payload.tool_choice = "auto"
   }

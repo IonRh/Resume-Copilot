@@ -520,6 +520,30 @@
   border-left: none;
 }
 
+/* 专注页（JD / 面试）：左简历 · 右助手，各占一半 */
+.career-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rw-agent.is-half {
+  width: auto;
+  flex: 1 1 0%;
+}
+
+@media (max-width: 768px) {
+  .career-body {
+    flex-direction: column;
+  }
+  .rw-agent.is-half {
+    flex: 1 1 0%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
 /* Agent 面板 */
 .agent-panel {
   display: flex;
@@ -609,6 +633,8 @@
   background: var(--card);
   color: var(--card-foreground);
   border: 1px solid var(--border);
+  /* 助手气泡渲染 Markdown（块级元素），不需要保留源换行 */
+  white-space: normal;
 }
 
 .agent-selection-chip {

@@ -5,21 +5,25 @@ import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { useResumeWorkspace } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
+import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import type { AgentMode, AgentTurn } from "@/lib/agent/types"
 import { DiffCard, InterviewCard, JdCard, ScoreCard, ToolStepView } from "./agent-cards"
+import { Markdown } from "./markdown"
 
-// 面板内仅保留贴合「编辑工作流」的模式；JD 匹配 / 模拟面试改由主页入口进入。
+// 编辑器三分屏内仅保留贴合「编辑工作流」的模式；JD 匹配 / 模拟面试为各自专注页（lockedMode）。
 const MODES: { key: AgentMode; label: string; icon: string }[] = [
   { key: "edit", label: "编辑", icon: "mdi:pencil-outline" },
   { key: "score", label: "评分诊断", icon: "mdi:chart-box-outline" },
 ]
 
-const SUGGESTIONS: Record<"edit" | "score", string[]> = {
-  edit: ["润色全文，让表达更专业", "突出量化成果与数字", "精简内容，控制在一页"],
-  score: ["给我的简历打分并指出问题", "从 HR 视角评估这份简历"],
-}
-
-export default function AgentPanel({ asOverlay = false }: { asOverlay?: boolean }) {
+export default function AgentPanel({
+  asOverlay = false,
+  lockedMode,
+}: {
+  asOverlay?: boolean
+  /** 专注页（JD / 面试）：锁定单一 Agent，隐藏模式切换与收起按钮 */
+  lockedMode?: AgentMode
+}) {
   const ws = useResumeWorkspace()
   const { send, stop, running, error } = useAgent()
   const [input, setInput] = useState("")
@@ -32,8 +36,15 @@ export default function AgentPanel({ asOverlay = false }: { asOverlay?: boolean 
   const messagesRef = useRef<HTMLDivElement | null>(null)
   const kickoffSent = useRef(false)
 
-  // 面板内只支持 edit / score；历史持久化里残留的 jd / interview 归一到 edit。
-  const activeMode: "edit" | "score" = ws.mode === "score" ? "score" : "edit"
+  // 锁定模式（专注页）直接采用 lockedMode；编辑器内只在 edit / score 间切换，残留的 jd/interview 归一到 edit。
+  const panelMode: AgentMode = lockedMode ?? (ws.mode === "score" ? "score" : "edit")
+  const profile = AGENT_PROFILES[panelMode]
+
+  // 专注页：确保 store.mode 与锁定模式一致，使 system prompt 正确。
+  useEffect(() => {
+    if (lockedMode && ws.mode !== lockedMode) ws.setMode(lockedMode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedMode])
 
   const modules = ws.resumeData.modules
   const mentionMatches = useMemo(() => {
@@ -124,58 +135,72 @@ export default function AgentPanel({ asOverlay = false }: { asOverlay?: boolean 
   }
 
   return (
-    <aside className={`rw-agent ${asOverlay ? "is-mobile-overlay" : ""}`}>
+    <aside
+      className={`rw-agent ${asOverlay ? "is-mobile-overlay" : ""} ${lockedMode ? "is-half" : ""}`}
+    >
       <div className="agent-panel">
         {/* 头部 */}
         <div className="agent-header">
           <div className="flex items-center gap-2">
             <span className="brand-gradient-bg grid h-7 w-7 place-items-center rounded-lg">
-              <Icon icon="mdi:robot-happy-outline" className="h-4 w-4" />
+              <Icon icon={lockedMode ? profile.icon : "mdi:robot-happy-outline"} className="h-4 w-4" />
             </span>
             <div>
-              <div className="text-sm font-semibold leading-none">AI 简历助手</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">可接管并修改所有元素</div>
+              <div className="text-sm font-semibold leading-none">
+                {lockedMode ? profile.name : "AI 简历助手"}
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                {lockedMode ? profile.tagline : "可接管并修改所有元素"}
+              </div>
             </div>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0"
-            onClick={() => ws.setAgentOpen(false)}
-            title="收起助手"
-          >
-            <Icon icon="mdi:close" className="h-4 w-4" />
-          </Button>
+          {!lockedMode ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => ws.setAgentOpen(false)}
+              title="收起助手"
+            >
+              <Icon icon="mdi:close" className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
 
-        {/* 模式切换 */}
-        <div className="agent-modes">
-          {MODES.map((m) => (
-            <button
-              key={m.key}
-              className="agent-mode-chip"
-              data-active={activeMode === m.key}
-              onClick={() => ws.setMode(m.key)}
-            >
-              <span className="inline-flex items-center gap-1">
-                <Icon icon={m.icon} className="h-3 w-3" />
-                {m.label}
-              </span>
-            </button>
-          ))}
-        </div>
+        {/* 模式切换（专注页隐藏） */}
+        {!lockedMode ? (
+          <div className="agent-modes">
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                className="agent-mode-chip"
+                data-active={panelMode === m.key}
+                onClick={() => ws.setMode(m.key)}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Icon icon={m.icon} className="h-3 w-3" />
+                  {m.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {/* 消息区 */}
         <div ref={messagesRef} className="agent-messages">
           {ws.turns.length === 0 ? (
             <div className="agent-empty">
               <span className="brand-gradient-bg mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl">
-                <Icon icon="mdi:sparkles" className="h-6 w-6" />
+                <Icon icon={lockedMode ? profile.icon : "mdi:sparkles"} className="h-6 w-6" />
               </span>
-              <p className="text-sm font-medium text-foreground">让 AI 帮你打磨简历</p>
-              <p className="mt-1 text-xs">描述需求，或点选预览中的元素后再提问。</p>
+              <p className="text-sm font-medium text-foreground">
+                {lockedMode ? profile.name : "让 AI 帮你打磨简历"}
+              </p>
+              <p className="mt-1 text-xs">
+                {lockedMode ? profile.tagline : "描述需求，或点选预览中的元素后再提问。"}
+              </p>
               <div className="mt-4 flex flex-col gap-1.5">
-                {SUGGESTIONS[activeMode].map((s) => (
+                {profile.suggestions.map((s) => (
                   <button
                     key={s}
                     className="rounded-lg border border-border px-3 py-1.5 text-left text-xs hover:border-primary hover:text-foreground"
@@ -302,7 +327,7 @@ function TurnView({ turn, onApply }: { turn: AgentTurn; onApply: (prompt: string
     <div className="flex flex-col gap-2">
       {turn.content ? (
         <div className="agent-bubble agent-bubble-assistant">
-          {turn.content}
+          <Markdown content={turn.content} />
           {turn.streaming ? <span className="ml-0.5 inline-block animate-pulse">▋</span> : null}
         </div>
       ) : turn.streaming && !turn.steps?.length ? (

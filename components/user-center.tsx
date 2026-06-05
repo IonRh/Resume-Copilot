@@ -16,6 +16,7 @@ import { StorageError, createEntryFromData, deleteResumes, getAllResumes, loadDe
 import { createDefaultResumeData } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import ExportButton from "@/components/export-button"
+import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
 
 type SortKey = "name" | "createdAt" | "updatedAt"
 type SortDir = "asc" | "desc"
@@ -31,6 +32,10 @@ export default function UserCenter() {
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview" }>({
+    open: false,
+    mode: "jd",
+  })
 
   const refresh = useCallback(() => {
     try {
@@ -156,6 +161,18 @@ export default function UserCenter() {
     [mostRecent, router, toast],
   )
 
+  // JD 匹配 / 模拟面试：先经「选简历 + 对话收集」模态框，再进入专注工作台
+  const openIntake = useCallback(
+    (mode: "jd" | "interview") => {
+      if (!mostRecent) {
+        toast({ title: "还没有简历", description: "请先创建或导入一份简历，再使用求职工具。" })
+        return
+      }
+      setIntake({ open: true, mode })
+    },
+    [mostRecent, toast],
+  )
+
   const handleImport: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -265,27 +282,27 @@ export default function UserCenter() {
               icon: "mdi:auto-fix",
               title: "AI 简历润色",
               desc: "通读最近简历，逐句润色并量化成果",
-              prompt:
-                "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。",
+              action: () =>
+                openTool(
+                  "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。",
+                ),
             },
             {
               icon: "mdi:target",
               title: "JD 匹配优化",
-              desc: "对照目标岗位 JD 分析匹配度并优化",
-              prompt:
-                "我要做岗位匹配优化。请让我把目标岗位 JD 发给你，然后分析我的简历与该岗位的匹配度，列出已命中 / 缺失关键词，并给出可直接落地的修改建议。",
+              desc: "选择简历，对话给出 JD，进入专注工作台",
+              action: () => openIntake("jd"),
             },
             {
               icon: "mdi:account-voice",
               title: "模拟面试",
-              desc: "基于简历出题，逐题点评并追问",
-              prompt:
-                "请基于我的简历进行模拟面试：先提出 5 道有针对性的问题（标注考察点与作答提示），我会逐题作答，请逐一点评并适当追问。",
+              desc: "选择简历，设定岗位，进入模拟面试台",
+              action: () => openIntake("interview"),
             },
           ].map((tool) => (
             <button
               key={tool.title}
-              onClick={() => openTool(tool.prompt)}
+              onClick={tool.action}
               className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
             >
               <span className="brand-gradient-bg grid h-10 w-10 shrink-0 place-items-center rounded-xl">
@@ -477,6 +494,15 @@ export default function UserCenter() {
           </Table>
         )}
       </div>
+
+      {/* JD 匹配 / 模拟面试 意图收集 */}
+      <CareerIntakeDialog
+        open={intake.open}
+        mode={intake.mode}
+        resumes={items}
+        defaultResumeId={mostRecent?.id}
+        onOpenChange={(o) => setIntake((s) => ({ ...s, open: o }))}
+      />
 
       {/* 删除确认 */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
