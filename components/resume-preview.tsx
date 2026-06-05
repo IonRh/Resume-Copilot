@@ -1,20 +1,64 @@
-﻿/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @next/next/no-img-element */
 "use client"
 
 import { useLayoutEffect, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
+import type { WorkspaceSelection } from "@/lib/agent/types"
+import { docToText } from "@/lib/agent/changeset"
 import RichTextRenderer from "./rich-text-renderer"
 
 interface ResumePreviewProps {
   resumeData: ResumeData
+  /** 开启后预览中的元素可点选，用于限定 Agent 上下文 */
+  interactive?: boolean
+  selectedId?: string | null
+  highlightedIds?: string[]
+  onSelect?: (selection: WorkspaceSelection | null) => void
+  /** 点击元素旁「用 AI 优化」时触发 */
+  onRequestAI?: (selection: WorkspaceSelection) => void
 }
 
 /**
  * 简历预览组件
  */
-export default function ResumePreview({ resumeData }: ResumePreviewProps) {
+export default function ResumePreview({
+  resumeData,
+  interactive = false,
+  selectedId = null,
+  highlightedIds = [],
+  onSelect,
+  onRequestAI,
+}: ResumePreviewProps) {
   const isAsciiOnly = (str: string | undefined) => !!str && /^[\x00-\x7F]+$/.test(str);
+
+  // 选择/高亮辅助
+  const selClass = (id: string) => {
+    const hi = highlightedIds.includes(id) ? "rp-highlight" : "";
+    if (!interactive) return hi;
+    const sel = selectedId === id ? "rp-selected" : "";
+    return `rp-selectable ${sel} ${hi}`.trim();
+  };
+  const pick = (e: React.MouseEvent, selection: WorkspaceSelection) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    onSelect?.(selectedId === selection.id ? null : selection);
+  };
+  const AiFloat = ({ selection }: { selection: WorkspaceSelection }) =>
+    interactive && selectedId === selection.id ? (
+      <button
+        type="button"
+        className="rp-ai-pop no-print brand-gradient-bg inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-md"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRequestAI?.(selection);
+        }}
+      >
+        <Icon icon="mdi:auto-fix" className="h-3 w-3" /> 用 AI 优化
+      </button>
+    ) : null;
+
+  const themeColor = resumeData.themeColor;
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
@@ -221,7 +265,11 @@ export default function ResumePreview({ resumeData }: ResumePreviewProps) {
   ]);
 
   return (
-    <div className="resume-preview resume-content">
+    <div
+      className="resume-preview resume-content"
+      style={themeColor ? ({ ["--resume-accent" as string]: themeColor } as React.CSSProperties) : undefined}
+      onClick={interactive ? () => onSelect?.(null) : undefined}
+    >
       {/* 头部信息 */}
       <div className={`flex mb-6 ${headerAlignClass}`}>
         {/* 居中标题模式下，头像置于最上方并居中显示 */}
@@ -463,10 +511,16 @@ export default function ResumePreview({ resumeData }: ResumePreviewProps) {
       {/* 简历模块 */}
       <div className="space-y-6">
         {resumeData.modules
+          .slice()
           .sort((a, b) => a.order - b.order)
           .map((module) => (
-            <div key={module.id} className="resume-module">
-              <div className="module-title text-lg font-semibold text-foreground border-b border-border pb-2 mb-3 flex items-center gap-2">
+            <div key={module.id} className="resume-module" data-module-id={module.id}>
+              <div
+                className={`module-title text-lg font-semibold text-foreground border-b border-border pb-2 mb-3 flex items-center gap-2 ${selClass(module.id)}`}
+                style={themeColor ? { color: themeColor, borderBottomColor: themeColor } : undefined}
+                data-role="module-title"
+                onClick={(e) => pick(e, { kind: "module", id: module.id, label: `模块「${module.title}」` })}
+              >
                 {module.icon && (
                   <svg
                     width={20}
@@ -476,37 +530,60 @@ export default function ResumePreview({ resumeData }: ResumePreviewProps) {
                   />
                 )}
                 {module.title}
+                <AiFloat selection={{ kind: "module", id: module.id, label: `模块「${module.title}」` }} />
               </div>
 
               <div className="space-y-[0.3em]">
                 {/* 渲染行 */}
                 {module.rows
+                  .slice()
                   .sort((a, b) => a.order - b.order)
-                  .map((row) => (
+                  .map((row, rowIdx) => (
                     row.type === 'tags' ? (
-                      <div key={row.id} className="flex flex-wrap gap-1 items-center mb-1">
+                      <div
+                        key={row.id}
+                        data-row-id={row.id}
+                        className={`flex flex-wrap gap-1 items-center mb-1 ${selClass(row.id)}`}
+                        onClick={(e) => pick(e, { kind: "row", id: row.id, moduleId: module.id, label: `「${module.title}」· 标签`, text: (row.tags || []).join("、") })}
+                      >
                         {(row.tags || []).slice(0, 20).map((tag, idx) => (
                           <span key={`${row.id}-tag-${idx}`} className="inline-flex items-center border border-gray-300 rounded-full px-2 py-0.5 text-xs text-gray-600">
                             {tag}
                           </span>
                         ))}
+                        <AiFloat selection={{ kind: "row", id: row.id, moduleId: module.id, label: `「${module.title}」· 标签`, text: (row.tags || []).join("、") }} />
                       </div>
                     ) : (
                       <div
                         key={row.id}
+                        data-row-id={row.id}
                         className="grid gap-3 items-center"
                         style={{
                           gridTemplateColumns: `repeat(${row.columns}, 1fr)`,
                         }}
                       >
-                        {row.elements.map((element) => (
-                          <div
-                            key={element.id}
-                            className="text-sm text-foreground"
-                          >
-                            <RichTextRenderer content={element.content} />
-                          </div>
-                        ))}
+                        {row.elements.map((element) => {
+                          const label = `「${module.title}」· 第${rowIdx + 1}行 · 第${element.columnIndex + 1}列`
+                          const selection: WorkspaceSelection = {
+                            kind: "element",
+                            id: element.id,
+                            moduleId: module.id,
+                            rowId: row.id,
+                            label,
+                            text: docToText(element.content),
+                          }
+                          return (
+                            <div
+                              key={element.id}
+                              data-element-id={element.id}
+                              className={`text-sm text-foreground ${selClass(element.id)}`}
+                              onClick={(e) => pick(e, selection)}
+                            >
+                              <RichTextRenderer content={element.content} />
+                              <AiFloat selection={selection} />
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   ))}

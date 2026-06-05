@@ -1,0 +1,155 @@
+import type { ResumeData } from "@/types/resume"
+
+/** 被选中/被引用元素的类型 */
+export type SelectionKind =
+  | "module"
+  | "row"
+  | "element"
+  | "title"
+  | "personal"
+  | "jobIntention"
+
+/** 工作区当前选中的元素（用于限定 Agent 上下文） */
+export interface WorkspaceSelection {
+  kind: SelectionKind
+  /** element/row/module 的 id；title/personal/jobIntention 使用 kind 作为占位 id */
+  id: string
+  moduleId?: string
+  rowId?: string
+  /** 人类可读标签，如「工作经历 · 第2行 · 第1列」 */
+  label: string
+  /** 当前文本快照（元素类型时可用） */
+  text?: string
+}
+
+/** 变更类别 */
+export type ChangeKind = "text" | "structure" | "style" | "generate"
+
+/**
+ * 单条变更（ChangeSet）：由工具以 dry-run 方式产出，审阅通过后才落地。
+ * apply 是纯函数，在内存中持有；不会被序列化。
+ */
+export interface ChangeSet {
+  id: string
+  kind: ChangeKind
+  /** 操作名（通常是工具名） */
+  op: string
+  /** 人类可读摘要 */
+  summary: string
+  /** 应用后需要在预览高亮的元素 id 集合 */
+  targetIds: string[]
+  /** 文本类变更的前后内容 */
+  before?: string
+  after?: string
+  /** 结构/样式类变更的补充说明 */
+  note?: string
+  apply: (data: ResumeData) => ResumeData
+}
+
+export type StagedStatus = "pending" | "accepted" | "rejected"
+
+export interface StagedChange {
+  change: ChangeSet
+  status: StagedStatus
+}
+
+/** Agent 一次工具调用在 UI 中的展示步骤 */
+export interface ToolStep {
+  id: string
+  tool: string
+  label: string
+  status: "running" | "done" | "error"
+  detail?: string
+}
+
+/* ---------- 展示型卡片 ---------- */
+
+export interface ScoreDimension {
+  name: string
+  score: number
+  comment?: string
+}
+
+export interface ScoreCard {
+  type: "score"
+  overall: number
+  dimensions: ScoreDimension[]
+  strengths?: string[]
+  suggestions?: string[]
+}
+
+export interface JdSuggestion {
+  section: string
+  advice: string
+  /** 一键应用时发送给 Agent 的指令 */
+  prompt?: string
+}
+
+export interface JdCard {
+  type: "jd"
+  matchScore: number
+  matchedKeywords: string[]
+  missingKeywords: string[]
+  summary?: string
+  suggestions: JdSuggestion[]
+}
+
+export interface InterviewQuestion {
+  question: string
+  kind?: string
+  hint?: string
+}
+
+export interface InterviewCard {
+  type: "interview"
+  intro?: string
+  questions: InterviewQuestion[]
+}
+
+export type AgentCard = ScoreCard | JdCard | InterviewCard
+
+/* ---------- 对话回合（UI 层） ---------- */
+
+export type TurnRole = "user" | "assistant"
+
+export interface AgentTurn {
+  id: string
+  role: TurnRole
+  content: string
+  streaming?: boolean
+  selectionLabel?: string
+  steps?: ToolStep[]
+  changeIds?: string[]
+  cards?: AgentCard[]
+  error?: boolean
+}
+
+/* ---------- OpenAI 兼容消息格式（API 层） ---------- */
+
+export interface ToolCall {
+  id: string
+  type: "function"
+  function: { name: string; arguments: string }
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant" | "tool"
+  content: string | null
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+  name?: string
+}
+
+/** Agent 顶部模式 */
+export type AgentMode = "edit" | "score" | "jd" | "interview"
+
+/** 工具执行结果 */
+export interface ToolResult {
+  ok: boolean
+  /** 回传给模型的文本结果 */
+  message: string
+  /** 变更类工具产出的暂存变更 */
+  change?: ChangeSet
+  /** 展示类工具产出的卡片 */
+  card?: AgentCard
+}

@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import ResumeBuilder from "@/components/resume-builder"
+import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, StorageError, getResumeById } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
@@ -67,7 +67,7 @@ function NewEditPageContent() {
 
   return (
     <main className="min-h-screen bg-background">
-      <ResumeBuilder
+      <ResumeWorkspace
         // 优先使用：克隆数据 > 预加载数据
         initialData={clonedData ?? prefetchedData}
         template={useExample ? "example" : "default"}

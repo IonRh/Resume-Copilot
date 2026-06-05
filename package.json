@@ -8,6 +8,17 @@
     "lint": "next lint",
     "start": "next start"
   },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "win32",
+        "linux"
+      ],
+      "cpu": [
+        "x64"
+      ]
+    }
+  },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
     "@iconify/react": "latest",

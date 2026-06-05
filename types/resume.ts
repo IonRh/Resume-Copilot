@@ -152,6 +152,8 @@ export interface ResumeData {
   modules: ResumeModule[]
   /** 头像URL（可选） */
   avatar?: string
+  /** 主题强调色（可选，十六进制，如 #4f46e5）；用于模块标题与分隔线 */
+  themeColor?: string
   /** 创建时间 */
   createdAt: string
   /** 最后修改时间 */

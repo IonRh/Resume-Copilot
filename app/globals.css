@@ -17,20 +17,20 @@
   /* #ffffff */
   --popover-foreground: oklch(0.35 0.01 258.34);
   /* #475569 */
-  --primary: oklch(0.45 0.15 162.4);
-  /* #059669 */
+  --primary: oklch(0.52 0.23 277);
+  /* indigo #4f46e5 */
   --primary-foreground: oklch(1 0 0);
   /* #ffffff */
-  --secondary: oklch(0.55 0.15 162.4);
-  /* #10b981 */
+  --secondary: oklch(0.62 0.2 300);
+  /* violet #8b5cf6 */
   --secondary-foreground: oklch(1 0 0);
   /* #ffffff */
   --muted: oklch(0.97 0.01 258.34);
   /* #f1f5f9 */
   --muted-foreground: oklch(0.35 0.01 258.34);
   /* #475569 */
-  --accent: oklch(0.55 0.15 162.4);
-  /* #10b981 */
+  --accent: oklch(0.62 0.2 300);
+  /* violet #8b5cf6 */
   --accent-foreground: oklch(1 0 0);
   /* #ffffff */
   --destructive: oklch(0.5 0.22 12.17);
@@ -41,12 +41,12 @@
   /* #e4e4e4 */
   --input: oklch(1 0 0);
   /* #ffffff */
-  --ring: oklch(0.45 0.15 162.4 / 0.5);
-  /* rgba(9, 150, 105, 0.5) */
-  --chart-1: oklch(0.45 0.15 162.4);
+  --ring: oklch(0.52 0.23 277 / 0.5);
+  /* indigo ring */
+  --chart-1: oklch(0.52 0.23 277);
   /* #059669 */
-  --chart-2: oklch(0.55 0.15 162.4);
-  /* #10b981 */
+  --chart-2: oklch(0.62 0.2 300);
+  /* violet */
   --chart-3: oklch(0.9 0 0);
   /* #e4e4e4 */
   --chart-4: oklch(0.97 0.01 258.34);
@@ -58,18 +58,23 @@
   /* #ffffff */
   --sidebar-foreground: oklch(0.35 0.01 258.34);
   /* #475569 */
-  --sidebar-primary: oklch(0.45 0.15 162.4);
-  /* #059669 */
+  --sidebar-primary: oklch(0.52 0.23 277);
+  /* indigo */
   --sidebar-primary-foreground: oklch(1 0 0);
   /* #ffffff */
-  --sidebar-accent: oklch(0.55 0.15 162.4);
-  /* #10b981 */
+  --sidebar-accent: oklch(0.62 0.2 300);
+  /* violet */
   --sidebar-accent-foreground: oklch(1 0 0);
   /* #ffffff */
   --sidebar-border: oklch(0.9 0 0);
   /* #e4e4e4 */
-  --sidebar-ring: oklch(0.45 0.15 162.4 / 0.5);
-  /* rgba(9, 150, 105, 0.5) */
+  --sidebar-ring: oklch(0.52 0.23 277 / 0.5);
+  /* indigo ring */
+
+  /* AI-native 蓝紫品牌渐变 */
+  --brand-from: #4f46e5;
+  --brand-via: #7c6cf2;
+  --brand-to: #a855f7;
 }
 
 .dark {
@@ -79,28 +84,28 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.145 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.55 0.15 162.4);
-  /* 深色模式下的绿色主题 */
+  --primary: oklch(0.62 0.2 290);
+  /* 深色模式下的蓝紫主题 */
   --primary-foreground: oklch(0.145 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.55 0.15 162.4);
+  --accent: oklch(0.62 0.2 290);
   --accent-foreground: oklch(0.145 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.55 0.15 162.4);
-  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-1: oklch(0.62 0.2 290);
+  --chart-2: oklch(0.696 0.17 300);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.55 0.15 162.4);
+  --sidebar-primary: oklch(0.62 0.2 290);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -154,6 +159,17 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   /* Critical: restore list markers for Tiptap content in prod
@@ -406,4 +422,475 @@
   .pdf-preview-mode .resume-content .resume-module .grid+.grid {
     margin-top: 0.6em !important;
   }
+}
+
+/* ============================================================
+   AI-Native 工作区 / Agent 面板 / 预览选择 样式
+   ============================================================ */
+
+/* 品牌渐变工具类 */
+.brand-gradient-text {
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-via), var(--brand-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-gradient-bg {
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-via), var(--brand-to));
+  color: #fff;
+}
+
+.brand-gradient-bg:hover {
+  filter: brightness(1.06);
+}
+
+.brand-ring {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand-via) 35%, transparent);
+}
+
+/* 工作区外壳：三分屏 */
+.rw-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rw-toolbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.rw-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rw-edit {
+  background: var(--background);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.rw-preview {
+  background: color-mix(in oklab, var(--muted) 30%, transparent);
+  overflow-y: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.rw-agent {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 1280px) {
+  .rw-agent {
+    width: 352px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .rw-agent {
+    width: 336px;
+  }
+}
+
+/* 移动端：Agent 作为全屏覆盖层 */
+.rw-agent.is-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  z-index: 50;
+  border-left: none;
+}
+
+/* Agent 面板 */
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.agent-header {
+  flex-shrink: 0;
+  padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.agent-modes {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.agent-mode-chip {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  background: var(--background);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.agent-mode-chip:hover {
+  border-color: color-mix(in oklab, var(--brand-via) 50%, var(--border));
+  color: var(--foreground);
+}
+
+.agent-mode-chip[data-active="true"] {
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-to));
+  color: #fff;
+  border-color: transparent;
+}
+
+.agent-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+}
+
+.agent-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 1rem;
+}
+
+.agent-bubble {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  max-width: 100%;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.agent-bubble-user {
+  align-self: flex-end;
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-to));
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.agent-bubble-assistant {
+  align-self: stretch;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+}
+
+.agent-selection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--brand-via) 18%, transparent);
+  color: color-mix(in oklab, var(--brand-from) 75%, var(--foreground));
+  margin-bottom: 0.25rem;
+}
+
+/* 工具步骤 */
+.tool-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px dashed var(--border);
+  background: color-mix(in oklab, var(--muted) 35%, transparent);
+}
+
+.tool-step[data-status="running"] {
+  border-color: color-mix(in oklab, var(--brand-via) 45%, var(--border));
+  color: color-mix(in oklab, var(--brand-from) 70%, var(--foreground));
+}
+
+.tool-step[data-status="done"] .tool-step-dot {
+  background: var(--brand-via);
+}
+
+.tool-step-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+/* diff / 建议卡片 */
+.diff-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.diff-card[data-state="accepted"] {
+  border-color: color-mix(in oklab, var(--brand-via) 55%, var(--border));
+  opacity: 0.85;
+}
+
+.diff-card[data-state="rejected"] {
+  opacity: 0.5;
+}
+
+.diff-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--muted) 30%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.diff-body {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.diff-text {
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid transparent;
+}
+
+.diff-before {
+  background: color-mix(in oklab, #ef4444 12%, transparent);
+  border-color: color-mix(in oklab, #ef4444 25%, transparent);
+  text-decoration: line-through;
+  color: color-mix(in oklab, #ef4444 35%, var(--foreground));
+}
+
+.diff-after {
+  background: color-mix(in oklab, #22c55e 14%, transparent);
+  border-color: color-mix(in oklab, #22c55e 30%, transparent);
+}
+
+.diff-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.agent-pending-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--brand-via) 8%, var(--card));
+  font-size: 0.8125rem;
+}
+
+/* Composer */
+.agent-composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 0.625rem 0.75rem;
+  background: var(--background);
+}
+
+.agent-composer-box {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+  transition: border-color 0.15s ease;
+}
+
+.agent-composer-box:focus-within {
+  border-color: color-mix(in oklab, var(--brand-via) 55%, var(--border));
+}
+
+/* @ 提及下拉 */
+.mention-menu {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--popover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mention-item {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mention-item[data-active="true"],
+.mention-item:hover {
+  background: color-mix(in oklab, var(--brand-via) 14%, transparent);
+}
+
+/* 分析卡片（评分 / JD 匹配 / 面试） */
+.analysis-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.analysis-card-head {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background-image: linear-gradient(120deg,
+      color-mix(in oklab, var(--brand-from) 14%, transparent),
+      color-mix(in oklab, var(--brand-to) 14%, transparent));
+  font-weight: 600;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.score-ring {
+  --val: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background:
+    radial-gradient(closest-side, var(--background) 72%, transparent 73% 100%),
+    conic-gradient(var(--brand-via) calc(var(--val) * 1%), color-mix(in oklab, var(--muted) 60%, transparent) 0);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  flex-shrink: 0;
+}
+
+.kw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+}
+
+.kw-chip[data-kind="matched"] {
+  background: color-mix(in oklab, #22c55e 14%, transparent);
+  border-color: color-mix(in oklab, #22c55e 35%, transparent);
+}
+
+.kw-chip[data-kind="missing"] {
+  background: color-mix(in oklab, #f59e0b 14%, transparent);
+  border-color: color-mix(in oklab, #f59e0b 35%, transparent);
+}
+
+/* 预览：可选择 / 选中 / 变更高亮 */
+.rp-selectable {
+  position: relative;
+  border-radius: 4px;
+  transition: outline-color 0.12s ease, background-color 0.12s ease;
+  outline: 1.5px solid transparent;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+
+.rp-selectable:hover {
+  outline-color: color-mix(in oklab, var(--brand-via) 45%, transparent);
+  background-color: color-mix(in oklab, var(--brand-via) 6%, transparent);
+}
+
+.rp-selected {
+  outline-color: var(--brand-via) !important;
+  background-color: color-mix(in oklab, var(--brand-via) 9%, transparent);
+}
+
+@keyframes rp-highlight-pulse {
+  0% {
+    background-color: color-mix(in oklab, var(--brand-to) 32%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.rp-highlight {
+  animation: rp-highlight-pulse 1.8s ease-out;
+  border-radius: 4px;
+}
+
+/* 选中元素旁的 AI 优化浮标 */
+.rp-ai-pop {
+  position: absolute;
+  top: -0.5rem;
+  right: 0;
+  transform: translateY(-100%);
+  z-index: 20;
+}
+
+/* 首页 AI Hero */
+.ai-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background-image:
+    radial-gradient(1200px 300px at 0% 0%, color-mix(in oklab, var(--brand-from) 16%, transparent), transparent),
+    radial-gradient(900px 300px at 100% 100%, color-mix(in oklab, var(--brand-to) 16%, transparent), transparent),
+    linear-gradient(180deg, var(--card), var(--background));
+}
+
+/* 旋转加载点 */
+@keyframes agent-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.agent-spin {
+  animation: agent-spin 0.8s linear infinite;
 }

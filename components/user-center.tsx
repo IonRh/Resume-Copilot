@@ -130,6 +130,32 @@ export default function UserCenter() {
     router.push(`/edit/new?clone=${encodeURIComponent(id)}`)
   }
 
+  // 最近更新的一份简历，作为求职工具的默认操作对象
+  const mostRecent = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      )[0],
+    [items],
+  )
+
+  // 求职工具入口：把待办指令写入 sessionStorage，进入工作区后自动呼出 AI 并发起任务
+  const openTool = useCallback(
+    (prompt: string) => {
+      if (!mostRecent) {
+        toast({ title: "还没有简历", description: "请先创建或导入一份简历，再使用求职工具。" })
+        return
+      }
+      try {
+        sessionStorage.setItem("agent-kickoff", JSON.stringify({ prompt }))
+      } catch {
+        /* sessionStorage 不可用时仍正常进入编辑页 */
+      }
+      router.push(`/edit/${mostRecent.id}`)
+    },
+    [mostRecent, router, toast],
+  )
+
   const handleImport: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -177,6 +203,108 @@ export default function UserCenter() {
     <div className="min-h-screen bg-background">
       {/* 统一隐藏文件输入，空态也可使用 */}
       <input id="uc-import-file" type="file" accept=".json" className="hidden" onChange={handleImport} />
+
+      {/* AI + 求职 品牌横幅 */}
+      <div className="p-4 pb-0">
+        <div className="ai-hero px-6 py-8 sm:px-10 sm:py-10">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
+                <Icon icon="mdi:sparkles" className="h-3.5 w-3.5 text-primary" />
+                AI Native · 大学生求职全流程
+              </div>
+              <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">
+                <span className="brand-gradient-text">AI + 求职</span>
+                <span className="text-foreground"> 简历工作区</span>
+              </h1>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+                左侧手工编辑、中间实时预览，右上角呼出 AI Agent 即进入三分屏工作区。
+                Agent 可润色改写、调整结构与样式、对照 JD 优化、给出评分诊断与模拟面试，所有改动均以 diff 卡片确认后落地。
+              </p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Button onClick={handleCreate} className="brand-gradient-bg gap-2 border-0">
+                  <Icon icon="mdi:robot-happy-outline" className="h-4 w-4" /> AI 智能创建
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2 bg-transparent"
+                  onClick={() => prefetchAndOpenNew("example")}
+                >
+                  <Icon icon="mdi:lightbulb-on-outline" className="h-4 w-4" /> 从示例开始
+                </Button>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                {[
+                  { icon: "mdi:auto-fix", label: "逐句润色改写" },
+                  { icon: "mdi:file-tree", label: "结构智能重排" },
+                  { icon: "mdi:target", label: "JD 精准匹配" },
+                  { icon: "mdi:chart-box-outline", label: "简历评分诊断" },
+                  { icon: "mdi:account-voice", label: "模拟面试" },
+                ].map((f) => (
+                  <span key={f.label} className="inline-flex items-center gap-1.5">
+                    <Icon icon={f.icon} className="h-3.5 w-3.5 text-primary" />
+                    {f.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="hidden shrink-0 sm:block">
+              <div className="brand-gradient-bg grid h-28 w-28 place-items-center rounded-3xl shadow-lg shadow-primary/20">
+                <Icon icon="mdi:file-account-outline" className="h-14 w-14" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI 求职工具路口 */}
+      <div className="p-4 pb-0">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            {
+              icon: "mdi:auto-fix",
+              title: "AI 简历润色",
+              desc: "通读最近简历，逐句润色并量化成果",
+              prompt:
+                "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。",
+            },
+            {
+              icon: "mdi:target",
+              title: "JD 匹配优化",
+              desc: "对照目标岗位 JD 分析匹配度并优化",
+              prompt:
+                "我要做岗位匹配优化。请让我把目标岗位 JD 发给你，然后分析我的简历与该岗位的匹配度，列出已命中 / 缺失关键词，并给出可直接落地的修改建议。",
+            },
+            {
+              icon: "mdi:account-voice",
+              title: "模拟面试",
+              desc: "基于简历出题，逐题点评并追问",
+              prompt:
+                "请基于我的简历进行模拟面试：先提出 5 道有针对性的问题（标注考察点与作答提示），我会逐题作答，请逐一点评并适当追问。",
+            },
+          ].map((tool) => (
+            <button
+              key={tool.title}
+              onClick={() => openTool(tool.prompt)}
+              className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
+            >
+              <span className="brand-gradient-bg grid h-10 w-10 shrink-0 place-items-center rounded-xl">
+                <Icon icon={tool.icon} className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1 text-sm font-semibold">
+                  {tool.title}
+                  <Icon
+                    icon="mdi:arrow-right"
+                    className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                  />
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{tool.desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between gap-4 p-4">

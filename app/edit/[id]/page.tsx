@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import ResumeBuilder from "@/components/resume-builder"
+import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@iconify/react"
 import type { ResumeData, StoredResume } from "@/types/resume"
@@ -61,7 +61,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
 
   return (
     <main className="min-h-screen bg-background">
-      <ResumeBuilder
+      <ResumeWorkspace
         initialData={entry.resumeData}
         entryId={id}
         onChange={setCurrentData}
