@@ -108,7 +108,7 @@ export function DiffCard({ changeId }: { changeId: string }) {
         )}
       </div>
 
-      {status === "pending" ? (
+      {status === "pending" && !staged.hydrated ? (
         <div className="diff-actions">
           <Button
             size="sm"
@@ -125,6 +125,11 @@ export function DiffCard({ changeId }: { changeId: string }) {
           >
             <Icon icon="mdi:close" className="h-3.5 w-3.5" /> 拒绝
           </Button>
+        </div>
+      ) : status === "pending" ? (
+        <div className="diff-actions text-xs text-muted-foreground">
+          <Icon icon="mdi:history" className="h-4 w-4" />
+          已恢复记录，如需应用请重新生成
         </div>
       ) : (
         <div className="diff-actions text-xs text-muted-foreground">

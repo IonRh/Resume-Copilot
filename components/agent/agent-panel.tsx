@@ -3,10 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useResumeWorkspace } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
-import type { AgentMode, AgentTurn } from "@/lib/agent/types"
+import type { AgentCard, AgentMode, AgentTurn } from "@/lib/agent/types"
 import {
   DiffCard,
   InterviewCard,
@@ -34,6 +50,8 @@ export default function AgentPanel({
   const ws = useResumeWorkspace()
   const { send, retry, stop, running, error } = useAgent()
   const [input, setInput] = useState("")
+  const [newSessionOpen, setNewSessionOpen] = useState(false)
+  const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
   const [mention, setMention] = useState<{ active: boolean; query: string; index: number }>({
     active: false,
     query: "",
@@ -141,31 +159,60 @@ export default function AgentPanel({
     }
   }
 
+  const createSession = () => {
+    ws.newSession(newSessionMode)
+    setNewSessionOpen(false)
+  }
+
   return (
     <aside
       className={`rw-agent ${asOverlay ? "is-mobile-overlay" : ""} ${lockedMode ? "is-half" : ""}`}
     >
       <div className="agent-panel">
-        {/* 头部 */}
-        <div className="agent-header">
-          <div className="flex items-center gap-2">
-            <span className="brand-gradient-bg grid h-7 w-7 place-items-center rounded-lg">
-              <Icon icon={lockedMode ? profile.icon : "mdi:robot-happy-outline"} className="h-4 w-4" />
-            </span>
-            <div>
-              <div className="text-sm font-semibold leading-none">
-                {lockedMode ? profile.name : "AI 简历助手"}
-              </div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">
-                {lockedMode ? profile.tagline : "可接管并修改所有元素"}
-              </div>
-            </div>
-          </div>
+        <div className="agent-session-bar">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5 bg-transparent text-xs">
+                <Icon icon="mdi:history" className="h-3.5 w-3.5" />
+                历史记录
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Agent 会话</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ws.sessions.map((session) => (
+                <DropdownMenuItem
+                  key={session.id}
+                  className="flex items-center justify-between gap-2"
+                  onClick={() => ws.switchSession(session.id)}
+                >
+                  <span className="min-w-0 truncate">{session.title}</span>
+                  {session.id === ws.activeSessionId ? (
+                    <Icon icon="mdi:check" className="h-3.5 w-3.5 text-primary" />
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 bg-transparent text-xs"
+            onClick={() => {
+              setNewSessionMode("edit")
+              setNewSessionOpen(true)
+            }}
+          >
+            <Icon icon="mdi:plus" className="h-3.5 w-3.5" />
+            新建
+          </Button>
+
           {!lockedMode ? (
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 w-7 p-0"
+              className="ml-auto h-8 w-8 p-0"
               onClick={() => ws.setAgentOpen(false)}
               title="收起助手"
             >
@@ -173,25 +220,6 @@ export default function AgentPanel({
             </Button>
           ) : null}
         </div>
-
-        {/* 模式切换（专注页隐藏） */}
-        {!lockedMode ? (
-          <div className="agent-modes">
-            {MODES.map((m) => (
-              <button
-                key={m.key}
-                className="agent-mode-chip"
-                data-active={panelMode === m.key}
-                onClick={() => ws.setMode(m.key)}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <Icon icon={m.icon} className="h-3 w-3" />
-                  {m.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
 
         {/* 消息区 */}
         <div ref={messagesRef} className="agent-messages">
@@ -318,6 +346,38 @@ export default function AgentPanel({
           </div>
         </div>
       </div>
+
+      <Dialog open={newSessionOpen} onOpenChange={setNewSessionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新建 Agent 会话</DialogTitle>
+            <DialogDescription>选择这次会话要使用的工作模式。</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-2">
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                className="agent-new-session-option"
+                data-active={newSessionMode === m.key}
+                onClick={() => setNewSessionMode(m.key)}
+              >
+                <Icon icon={m.icon} className="h-5 w-5" />
+                <span className="font-medium">{m.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewSessionOpen(false)}>
+              取消
+            </Button>
+            <Button className="brand-gradient-bg border-0" onClick={createSession}>
+              新建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   )
 }
@@ -347,42 +407,59 @@ function TurnView({
 
   return (
     <div className="flex flex-col gap-2">
-      {turn.content ? (
-        <div className="agent-bubble agent-bubble-assistant">
-          <Markdown content={turn.content} />
-          {turn.streaming ? <span className="ml-0.5 inline-block animate-pulse">▋</span> : null}
-        </div>
-      ) : turn.streaming && !turn.steps?.length ? (
-        <div className="agent-bubble agent-bubble-assistant text-muted-foreground">
-          <Icon icon="mdi:loading" className="agent-spin mr-1 inline h-3.5 w-3.5" /> 思考中…
-        </div>
-      ) : null}
+      {turn.parts?.length ? (
+        turn.parts.map((part, index) => {
+          if (part.type === "text") {
+            return (
+              <AssistantText
+                key={part.id}
+                content={part.content}
+                streaming={Boolean(turn.streaming && index === turn.parts!.length - 1)}
+              />
+            )
+          }
+          if (part.type === "step") {
+            const step = turn.steps?.find((s) => s.id === part.stepId)
+            return step ? <ToolStepView key={part.id} step={step} /> : null
+          }
+          if (part.type === "change") return <DiffCard key={part.id} changeId={part.changeId} />
+          if (part.type === "card") {
+            const card = turn.cards?.[part.cardIndex]
+            return card ? <AgentCardView key={part.id} card={card} onApply={onApply} /> : null
+          }
+          return null
+        })
+      ) : (
+        <>
+          {turn.content ? (
+            <AssistantText content={turn.content} streaming={Boolean(turn.streaming)} />
+          ) : turn.streaming && !turn.steps?.length ? (
+            <div className="agent-bubble agent-bubble-assistant text-muted-foreground">
+              <Icon icon="mdi:loading" className="agent-spin mr-1 inline h-3.5 w-3.5" /> 思考中…
+            </div>
+          ) : null}
 
-      {turn.steps?.length ? (
-        <div className="flex flex-col gap-1">
-          {turn.steps.map((s) => (
-            <ToolStepView key={s.id} step={s} />
-          ))}
-        </div>
-      ) : null}
+          {turn.steps?.length ? (
+            <div className="flex flex-col gap-1">
+              {turn.steps.map((s) => (
+                <ToolStepView key={s.id} step={s} />
+              ))}
+            </div>
+          ) : null}
 
-      {turn.changeIds?.length ? (
-        <div className="flex flex-col gap-2">
-          {turn.changeIds.map((id) => (
-            <DiffCard key={id} changeId={id} />
-          ))}
-        </div>
-      ) : null}
+          {turn.changeIds?.length ? (
+            <div className="flex flex-col gap-2">
+              {turn.changeIds.map((id) => (
+                <DiffCard key={id} changeId={id} />
+              ))}
+            </div>
+          ) : null}
 
-      {turn.cards?.length
-        ? turn.cards.map((card, i) => {
-            if (card.type === "score") return <ScoreCard key={i} card={card} />
-            if (card.type === "jd") return <JdCard key={i} card={card} onApply={onApply} />
-            if (card.type === "interview") return <InterviewCard key={i} card={card} />
-            if (card.type === "interview_report") return <InterviewReportCard key={i} card={card} />
-            return null
-          })
-        : null}
+          {turn.cards?.length
+            ? turn.cards.map((card, i) => <AgentCardView key={i} card={card} onApply={onApply} />)
+            : null}
+        </>
+      )}
 
       {turn.error && onRetry ? (
         <Button
@@ -396,4 +473,21 @@ function TurnView({
       ) : null}
     </div>
   )
+}
+
+function AssistantText({ content, streaming }: { content: string; streaming: boolean }) {
+  return (
+    <div className="agent-bubble agent-bubble-assistant">
+      <Markdown content={content} />
+      {streaming ? <span className="ml-0.5 inline-block animate-pulse">▋</span> : null}
+    </div>
+  )
+}
+
+function AgentCardView({ card, onApply }: { card: AgentCard; onApply: (prompt: string) => void }) {
+  if (card.type === "score") return <ScoreCard card={card} />
+  if (card.type === "jd") return <JdCard card={card} onApply={onApply} />
+  if (card.type === "interview") return <InterviewCard card={card} />
+  if (card.type === "interview_report") return <InterviewReportCard card={card} />
+  return null
 }

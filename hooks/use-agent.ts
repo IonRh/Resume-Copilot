@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useResumeWorkspace } from "@/lib/agent/store"
 import { buildResumeOutline, genId } from "@/lib/agent/changeset"
 import { executeTool, READONLY_TOOLS } from "@/lib/agent/tools"
@@ -21,6 +21,16 @@ export function useAgent() {
   // 最近一次请求时的选中态，供「重试」复用
   const lastSelectionRef = useRef<WorkspaceSelection | null>(null)
 
+  useEffect(() => {
+    historyRef.current = ws.turns
+      .filter((turn) => turn.role === "user" || turn.content)
+      .map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      }))
+    lastSelectionRef.current = null
+  }, [ws.activeSessionId])
+
   const stop = useCallback(() => {
     abortRef.current?.abort()
     setRunning(false)
@@ -40,6 +50,7 @@ export function useAgent() {
           selection,
           jd: ws.jd,
           mode: ws.mode,
+          staged: ws.staged,
         }),
       }
 
@@ -48,7 +59,6 @@ export function useAgent() {
 
       try {
         let iteration = 0
-        let firstChunkOfIteration = true
         while (iteration < MAX_ITERATIONS) {
           iteration += 1
           if (controller.signal.aborted) break
@@ -56,22 +66,12 @@ export function useAgent() {
           const trimmedHistory = historyRef.current.slice(-HISTORY_LIMIT)
           const messages = [system, ...trimmedHistory]
 
-          firstChunkOfIteration = true
           const { content, toolCalls } = await streamChat(
             messages,
             { useTools: true },
             controller.signal,
             (delta) => {
-              // 多轮迭代之间用空行分隔已有文本
-              if (firstChunkOfIteration) {
-                firstChunkOfIteration = false
-                ws.updateTurn(assistantId, (t) => ({
-                  ...t,
-                  content: t.content ? `${t.content}\n\n${delta}` : delta,
-                }))
-              } else {
-                ws.appendAssistantText(assistantId, delta)
-              }
+              ws.appendAssistantText(assistantId, delta)
             },
           )
 

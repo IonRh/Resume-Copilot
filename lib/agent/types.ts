@@ -43,7 +43,7 @@ export interface ChangeSet {
   after?: string
   /** 结构/样式类变更的补充说明 */
   note?: string
-  apply: (data: ResumeData) => ResumeData
+  apply?: (data: ResumeData) => ResumeData
 }
 
 export type StagedStatus = "pending" | "accepted" | "rejected"
@@ -51,6 +51,8 @@ export type StagedStatus = "pending" | "accepted" | "rejected"
 export interface StagedChange {
   change: ChangeSet
   status: StagedStatus
+  /** 从本地缓存恢复的历史 diff 只能用于展示，不能再直接执行 apply */
+  hydrated?: boolean
 }
 
 /** Agent 一次工具调用在 UI 中的展示步骤 */
@@ -129,16 +131,33 @@ export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard
 
 export type TurnRole = "user" | "assistant"
 
+export type AssistantTurnPart =
+  | { id: string; type: "text"; content: string }
+  | { id: string; type: "step"; stepId: string }
+  | { id: string; type: "change"; changeId: string }
+  | { id: string; type: "card"; cardIndex: number }
+
 export interface AgentTurn {
   id: string
   role: TurnRole
   content: string
+  parts?: AssistantTurnPart[]
   streaming?: boolean
   selectionLabel?: string
   steps?: ToolStep[]
   changeIds?: string[]
   cards?: AgentCard[]
   error?: boolean
+}
+
+export interface AgentSession {
+  id: string
+  title: string
+  mode: AgentMode
+  turns: AgentTurn[]
+  staged: StagedChange[]
+  createdAt: string
+  updatedAt: string
 }
 
 /* ---------- OpenAI 兼容消息格式（API 层） ---------- */

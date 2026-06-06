@@ -1,4 +1,4 @@
-import type { AgentMode, WorkspaceSelection } from "./types"
+import type { AgentMode, StagedChange, WorkspaceSelection } from "./types"
 
 /**
  * 4 个 Agent 的 system prompt 集中、分开管理。
@@ -15,10 +15,11 @@ const BASE_RULES = [
   "通用规则：",
   "1. 元素通过 id 定位。若不确定 id 或当前内容，先调用 get_resume 获取结构大纲。",
   "2. 改写正文措辞优先用 update_element_text；调整结构用 add/remove/reorder 等；调整布局样式用 set_layout / set_theme_color。",
-  "3. 一次回复可调用多个工具完成一项任务；完成后用 1-3 句话说明你做了什么、为什么。",
-  "4. 始终使用简体中文，语气专业、简洁，像资深求职顾问。",
-  "5. 不要编造用户简历中不存在的经历；润色时保持事实，强化表达与量化。",
-  "6. 输出使用 Markdown：合理使用 **加粗**、`-` 列表、`1.` 有序列表、### 小标题，让结构清晰、便于阅读。",
+  "3. 每次准备调用工具前，必须先用一句简短中文告诉用户你接下来要查看/分析/准备什么；禁止首个 assistant 输出就是工具调用。",
+  "4. 一次回复可调用多个工具完成一项任务；工具执行完成后，再用 1-3 句话说明你做了什么、为什么。",
+  "5. 始终使用简体中文，语气专业、简洁，像资深求职顾问。",
+  "6. 不要编造用户简历中不存在的经历；润色时保持事实，强化表达与量化。",
+  "7. 输出使用 Markdown：合理使用 **加粗**、`-` 列表、`1.` 有序列表、### 小标题，让结构清晰、便于阅读。",
 ].join("\n")
 
 export interface AgentProfile {
@@ -187,8 +188,9 @@ export function buildSystemPrompt(args: {
   selection: WorkspaceSelection | null
   jd: string
   mode: AgentMode
+  staged?: StagedChange[]
 }): string {
-  const { outline, selection, jd, mode } = args
+  const { outline, selection, jd, mode, staged } = args
   const profile = AGENT_PROFILES[mode] ?? AGENT_PROFILES.edit
   const lines: string[] = [BASE_RULES, profile.guide, "", "【当前简历结构】", outline]
 
@@ -203,5 +205,27 @@ export function buildSystemPrompt(args: {
     const title = profile.intake?.briefingTitle ?? "目标岗位信息 / JD"
     lines.push("", `【${title}】`, jd.trim())
   }
+  const status = buildChangeStatusContext(staged)
+  if (status) lines.push("", status)
+  return lines.join("\n")
+}
+
+function buildChangeStatusContext(staged: StagedChange[] | undefined): string {
+  if (!staged?.length) return ""
+  const recent = staged.slice(-20)
+  const statusLabel: Record<StagedChange["status"], string> = {
+    accepted: "已接受，已应用到当前简历",
+    rejected: "已拒绝，不要再次按同样方案提交，除非用户明确要求",
+    pending: "待用户确认，尚未应用到当前简历",
+  }
+  const lines = [
+    "【用户对 diff 的确认状态】",
+    "这些状态是当前事实：已接受的修改已经体现在简历结构中；已拒绝的修改不要重复提交；待确认的修改尚未生效。",
+    ...recent.map((item, index) => {
+      const change = item.change
+      const target = change.targetIds.length ? `；目标：${change.targetIds.join("、")}` : ""
+      return `${index + 1}. ${statusLabel[item.status]}：${change.summary}（${change.op}${target}）`
+    }),
+  ]
   return lines.join("\n")
 }
