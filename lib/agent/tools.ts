@@ -5,6 +5,7 @@ import type {
   ModuleContentElement,
   PersonalInfoItem,
   JobIntentionItem,
+  JSONContent,
 } from "@/types/resume"
 import type { AgentCard, ChangeSet, ToolResult } from "./types"
 import {
@@ -23,6 +24,7 @@ import {
 import { READONLY_TOOLS } from "./tool-schemas"
 
 type Args = Record<string, unknown>
+type TextMark = NonNullable<JSONContent["marks"]>[number]
 
 const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback)
 const bool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v : undefined)
@@ -34,9 +36,126 @@ interface RowSpec {
   columns?: number
   texts?: string[]
   tags?: string[]
+  formats?: ColumnFormat[]
 }
 
-function buildRow(spec: RowSpec, order: number): ModuleContentRow {
+interface ColumnFormat {
+  bold?: boolean
+  fontSize?: string
+  fontFamily?: string
+  textAlign?: string
+}
+
+function textStyleMark(format?: ColumnFormat): TextMark[] {
+  const attrs: Record<string, string> = {}
+  if (format?.fontSize) attrs.fontSize = format.fontSize.endsWith("pt") ? format.fontSize : `${format.fontSize}pt`
+  if (format?.fontFamily) attrs.fontFamily = format.fontFamily
+  return Object.keys(attrs).length ? [{ type: "textStyle", attrs }] : []
+}
+
+function marksFor(format?: ColumnFormat): TextMark[] | undefined {
+  const marks = [...textStyleMark(format)]
+  if (format?.bold) marks.unshift({ type: "bold" })
+  return marks.length ? marks : undefined
+}
+
+function textToStyledDoc(text: string, format?: ColumnFormat): JSONContent {
+  const align = format?.textAlign || "left"
+  const marks = marksFor(format)
+  const rawLines = (text ?? "").replace(/\r\n/g, "\n").split("\n")
+  const blocks: JSONContent[] = []
+  let listBuffer: string[] = []
+
+  const textNode = (value: string): JSONContent => ({
+    type: "text",
+    text: value,
+    ...(marks ? { marks } : {}),
+  })
+
+  const flushList = () => {
+    if (listBuffer.length === 0) return
+    blocks.push({
+      type: "bulletList",
+      content: listBuffer.map((item) => ({
+        type: "listItem",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { textAlign: align },
+            content: item.length ? [textNode(item)] : [],
+          },
+        ],
+      })),
+    })
+    listBuffer = []
+  }
+
+  for (const line of rawLines) {
+    const bullet = line.match(/^\s*(?:[-•*])\s+(.*)$/)
+    if (bullet) {
+      listBuffer.push(bullet[1])
+      continue
+    }
+    flushList()
+    blocks.push({
+      type: "paragraph",
+      attrs: { textAlign: align },
+      content: line.length ? [textNode(line)] : [],
+    })
+  }
+  flushList()
+
+  if (blocks.length === 0) blocks.push({ type: "paragraph", attrs: { textAlign: align }, content: [] })
+  return { type: "doc", content: blocks }
+}
+
+function findFirstTextNode(content?: JSONContent | null): JSONContent | null {
+  if (!content) return null
+  if (content.type === "text") return content
+  for (const child of content.content || []) {
+    const found = findFirstTextNode(child)
+    if (found) return found
+  }
+  return null
+}
+
+function findFirstBlock(content?: JSONContent | null): JSONContent | null {
+  for (const block of content?.content || []) {
+    if (block.type === "paragraph" || block.type === "heading") return block
+    if (block.type === "bulletList" || block.type === "orderedList") {
+      const nested = findFirstBlock(block)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+function firstTextFormat(content?: JSONContent | null): ColumnFormat {
+  const firstBlock = findFirstBlock(content)
+  const firstText = findFirstTextNode(content)
+  const textStyle = firstText?.marks?.find((mark) => mark.type === "textStyle")?.attrs || {}
+  return {
+    bold: Boolean(firstText?.marks?.some((mark) => mark.type === "bold")),
+    fontSize: typeof textStyle.fontSize === "string" ? textStyle.fontSize : undefined,
+    fontFamily: typeof textStyle.fontFamily === "string" ? textStyle.fontFamily : undefined,
+    textAlign: typeof firstBlock?.attrs?.textAlign === "string" ? firstBlock.attrs.textAlign : undefined,
+  }
+}
+
+function normalizeFormats(raw: unknown): ColumnFormat[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item) => {
+    const o = (item || {}) as Args
+    return {
+      bold: bool(o.bold),
+      fontSize: str(o.fontSize) || undefined,
+      fontFamily: str(o.fontFamily) || undefined,
+      textAlign: str(o.textAlign) || undefined,
+    }
+  })
+}
+
+function buildRow(spec: RowSpec, order: number, inherit?: ModuleContentRow | null): ModuleContentRow {
   if (spec.type === "tags") {
     return {
       id: genId("row"),
@@ -53,9 +172,17 @@ function buildRow(spec: RowSpec, order: number): ModuleContentRow {
   for (let i = 0; i < columns; i++) {
     // 三列经验/教育行的常见对齐：左/中/右
     const align = columns === 3 ? ["left", "center", "right"][i] : "left"
+    const inherited = inherit?.columns === columns && inherit.elements[i] ? firstTextFormat(inherit.elements[i].content) : undefined
+    const explicit = spec.formats?.[i]
+    const format: ColumnFormat = {
+      ...inherited,
+      ...explicit,
+      textAlign: explicit?.textAlign ?? inherited?.textAlign ?? align,
+      bold: explicit?.bold ?? inherited?.bold ?? (i === 0 && columns >= 2 ? true : undefined),
+    }
     elements.push({
       id: genId("el"),
-      content: textToDoc(texts[i] ?? "", align),
+      content: textToStyledDoc(texts[i] ?? "", format),
       columnIndex: i,
     })
   }
@@ -81,13 +208,31 @@ function modulePreview(title: string, rowTexts: string[]): string {
   return [`模块「${title}」`, ...lines].join("\n")
 }
 
+function moduleOrderPreview(modules: ResumeModule[]): string {
+  return modules.map((m, i) => `${i + 1}. ${m.title}`).join("\n")
+}
+
+function rowSpec(raw: Args): RowSpec {
+  return {
+    type: str(raw.type) === "tags" ? "tags" : "rich",
+    columns: int(raw.columns),
+    texts: Array.isArray(raw.texts) ? raw.texts.map(String) : undefined,
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : undefined,
+    formats: normalizeFormats(raw.formats),
+  }
+}
+
 function buildModule(title: string, rows: RowSpec[] | undefined, order: number): ResumeModule {
+  const builtRows: ModuleContentRow[] = []
+  ;(rows || []).forEach((row, i) => {
+    builtRows.push(buildRow(row, i, builtRows[i - 1]))
+  })
   return {
     id: genId("mod"),
     title: title || "新模块",
     icon: '<path fill="currentColor" d="M3 3h18v2H3zm0 4h18v2H3zm0 4h12v2H3zm0 4h18v2H3zm0 4h12v2H3z"/>',
     order,
-    rows: (rows || []).map((r, i) => buildRow(r, i)),
+    rows: builtRows,
   }
 }
 
@@ -148,7 +293,8 @@ function draftToResumeData(draft: Args, base: ResumeData): ResumeData {
     },
     modules: (Array.isArray(draft.modules) ? draft.modules : []).map((m, i) => {
       const mo = (m || {}) as Args
-      return buildModule(str(mo.title), mo.rows as RowSpec[] | undefined, i)
+      const rows = Array.isArray(mo.rows) ? mo.rows.map((row) => rowSpec((row || {}) as Args)) : undefined
+      return buildModule(str(mo.title), rows, i)
     }),
     avatar: base.avatar,
     createdAt: base.createdAt || now,
@@ -171,7 +317,12 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
       if (!loc) return { ok: false, message: `未找到元素 ${elementId}` }
       const before = docToText(loc.element.content)
       const after = str(args.text)
-      const align = getDocTextAlign(loc.element.content)
+      const inherited = firstTextFormat(loc.element.content)
+      const format = {
+        ...inherited,
+        ...normalizeFormats([args])[0],
+        textAlign: str(args.textAlign) || inherited.textAlign || getDocTextAlign(loc.element.content),
+      }
       const change: ChangeSet = {
         id: genId("chg"),
         kind: "text",
@@ -181,7 +332,7 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         before,
         after,
         apply: (d) =>
-          withUpdatedElement(d, elementId, (el) => ({ ...el, content: textToDoc(after, align) })),
+          withUpdatedElement(d, elementId, (el) => ({ ...el, content: textToStyledDoc(after, format) })),
       }
       return { ok: true, message: `已暂存对元素 ${elementId} 的改写，等待用户确认。`, change }
     }
@@ -236,7 +387,7 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
     case "add_module": {
       const title = str(args.title, "新模块")
       const afterModuleId = str(args.afterModuleId)
-      const rows = args.rows as RowSpec[] | undefined
+      const rows = Array.isArray(args.rows) ? args.rows.map((row) => rowSpec((row || {}) as Args)) : undefined
       const change: ChangeSet = {
         id: genId("chg"),
         kind: "structure",
@@ -266,6 +417,7 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         op: name,
         summary: `删除模块「${module.title}」`,
         targetIds: [],
+        before: modulePreview(module.title, module.rows.map(rowPreview)),
         note: "该模块及其全部内容将被移除",
         apply: (d) => ({ ...d, modules: reindexOrder(d.modules.filter((m) => m.id !== moduleId)) }),
       }
@@ -275,12 +427,26 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
     case "reorder_modules": {
       const ordered = Array.isArray(args.orderedModuleIds) ? args.orderedModuleIds.map(String) : []
       if (ordered.length === 0) return { ok: false, message: "未提供模块顺序" }
+      const byId = new Map(data.modules.map((m) => [m.id, m]))
+      const reordered: ResumeModule[] = []
+      ordered.forEach((id) => {
+        const m = byId.get(id)
+        if (m) {
+          reordered.push(m)
+          byId.delete(id)
+        }
+      })
+      data.modules.forEach((m) => {
+        if (byId.has(m.id)) reordered.push(m)
+      })
       const change: ChangeSet = {
         id: genId("chg"),
         kind: "structure",
         op: name,
         summary: "重排模块顺序",
         targetIds: [],
+        before: moduleOrderPreview(data.modules),
+        after: moduleOrderPreview(reordered),
         apply: (d) => {
           const byId = new Map(d.modules.map((m) => [m.id, m]))
           const result: ResumeModule[] = []
@@ -306,28 +472,58 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
       const module = findModule(data, moduleId)
       if (!module) return { ok: false, message: `未找到模块 ${moduleId}` }
       const afterRowId = str(args.afterRowId)
-      const spec: RowSpec = {
-        type: str(args.type) === "tags" ? "tags" : "rich",
-        columns: int(args.columns),
-        texts: Array.isArray(args.texts) ? args.texts.map(String) : undefined,
-        tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
-      }
+      const spec = rowSpec(args)
       const change: ChangeSet = {
         id: genId("chg"),
         kind: "structure",
         op: name,
         summary: `在「${module.title}」新增一行`,
         targetIds: [moduleId],
+        after: specPreview(spec) || "（空行）",
+        note: afterRowId ? `插入到行 ${afterRowId} 之后` : "插入到模块末尾",
         apply: (d) =>
           withUpdatedModule(d, moduleId, (m) => {
             const rows = [...m.rows]
             const idx = afterRowId ? rows.findIndex((r) => r.id === afterRowId) : -1
             const insertAt = idx >= 0 ? idx + 1 : rows.length
-            rows.splice(insertAt, 0, buildRow(spec, insertAt))
+            const inherit = idx >= 0 ? rows[idx] : rows[rows.length - 1]
+            rows.splice(insertAt, 0, buildRow(spec, insertAt, inherit))
             return { ...m, rows: reindexOrder(rows) }
           }),
       }
       return { ok: true, message: "已暂存新增行。", change }
+    }
+
+    case "add_rows": {
+      const moduleId = str(args.moduleId)
+      const module = findModule(data, moduleId)
+      if (!module) return { ok: false, message: `未找到模块 ${moduleId}` }
+      const afterRowId = str(args.afterRowId)
+      const specs = Array.isArray(args.rows) ? args.rows.map((row) => rowSpec((row || {}) as Args)) : []
+      if (!specs.length) return { ok: false, message: "未提供要新增的行" }
+      const change: ChangeSet = {
+        id: genId("chg"),
+        kind: "structure",
+        op: name,
+        summary: `在「${module.title}」新增 ${specs.length} 行`,
+        targetIds: [moduleId],
+        after: specs.map((spec, i) => `${i + 1}. ${specPreview(spec) || "（空行）"}`).join("\n"),
+        note: afterRowId ? `整体插入到行 ${afterRowId} 之后` : "整体插入到模块末尾",
+        apply: (d) =>
+          withUpdatedModule(d, moduleId, (m) => {
+            const rows = [...m.rows]
+            const idx = afterRowId ? rows.findIndex((r) => r.id === afterRowId) : -1
+            const insertAt = idx >= 0 ? idx + 1 : rows.length
+            const builtRows: ModuleContentRow[] = []
+            specs.forEach((spec, offset) => {
+              const previous = builtRows[offset - 1] || (idx >= 0 ? rows[idx] : rows[rows.length - 1]) || null
+              builtRows.push(buildRow(spec, insertAt + offset, previous))
+            })
+            rows.splice(insertAt, 0, ...builtRows)
+            return { ...m, rows: reindexOrder(rows) }
+          }),
+      }
+      return { ok: true, message: `已暂存新增 ${specs.length} 行。`, change }
     }
 
     case "remove_row": {
@@ -335,12 +531,14 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
       const rowId = str(args.rowId)
       const module = findModule(data, moduleId)
       if (!module) return { ok: false, message: `未找到模块 ${moduleId}` }
+      const row = module.rows.find((r) => r.id === rowId)
       const change: ChangeSet = {
         id: genId("chg"),
         kind: "structure",
         op: name,
         summary: `删除「${module.title}」中的一行`,
         targetIds: [moduleId],
+        before: row ? rowPreview(row) : `行 ${rowId}`,
         apply: (d) =>
           withUpdatedModule(d, moduleId, (m) => ({
             ...m,

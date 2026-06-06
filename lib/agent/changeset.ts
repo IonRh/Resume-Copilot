@@ -43,6 +43,40 @@ export function getDocTextAlign(content?: JSONContent | null): string | undefine
   return typeof align === "string" ? align : undefined
 }
 
+function findFirstTextNode(content?: JSONContent | null): JSONContent | null {
+  if (!content) return null
+  if (content.type === "text") return content
+  for (const child of content.content || []) {
+    const found = findFirstTextNode(child)
+    if (found) return found
+  }
+  return null
+}
+
+function findFirstBlock(content?: JSONContent | null): JSONContent | null {
+  for (const block of content?.content || []) {
+    if (block.type === "paragraph" || block.type === "heading") return block
+    if (block.type === "bulletList" || block.type === "orderedList") {
+      const nested = findFirstBlock(block)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+function getElementFormatLabel(content?: JSONContent | null): string {
+  const firstText = findFirstTextNode(content)
+  const firstBlock = findFirstBlock(content)
+  const textStyle = firstText?.marks?.find((mark) => mark.type === "textStyle")?.attrs || {}
+  const parts: string[] = []
+  if (firstText?.marks?.some((mark) => mark.type === "bold")) parts.push("bold")
+  if (typeof textStyle.fontSize === "string" && textStyle.fontSize) parts.push(textStyle.fontSize)
+  if (typeof textStyle.fontFamily === "string" && textStyle.fontFamily) parts.push(textStyle.fontFamily)
+  const align = firstBlock?.attrs?.textAlign
+  if (typeof align === "string" && align) parts.push(`align=${align}`)
+  return parts.length ? ` [${parts.join(", ")}]` : ""
+}
+
 /**
  * 由纯文本构建 Tiptap 文档。
  * - 以换行拆分为多个段落
@@ -207,7 +241,7 @@ export function buildResumeOutline(data: ResumeData): string {
               .sort((a, b) => a.columnIndex - b.columnIndex)
               .forEach((e) => {
                 const text = docToText(e.content).replace(/\n/g, " ⏎ ")
-                lines.push(`        element#${e.id} (列${e.columnIndex}): "${text}"`)
+                lines.push(`        element#${e.id} (列${e.columnIndex})${getElementFormatLabel(e.content)}: "${text}"`)
               })
           }
           void ri

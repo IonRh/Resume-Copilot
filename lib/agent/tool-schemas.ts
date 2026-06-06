@@ -17,6 +17,36 @@ export interface ToolSchema {
   }
 }
 
+const columnFormatsSchema = {
+  type: "array",
+  description:
+    "各列富文本格式，可选。用于让新增内容匹配简历样式，例如项目标题列加粗。数组下标对应 texts 的列下标。",
+  items: {
+    type: "object",
+    properties: {
+      bold: { type: "boolean", description: "是否加粗" },
+      fontSize: { type: "string", description: "字号，如 12pt、14pt" },
+      fontFamily: { type: "string", description: "字体，如 Microsoft YaHei" },
+      textAlign: { type: "string", enum: ["left", "center", "right", "justify"] },
+    },
+  },
+} as const
+
+const rowSchema = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: ["rich", "tags"] },
+    columns: { type: "integer", enum: [1, 2, 3, 4] },
+    texts: {
+      type: "array",
+      items: { type: "string" },
+      description: "rich 行各列文本，数量应等于 columns；支持以 - 开头表示项目符号，\\n 换行",
+    },
+    formats: columnFormatsSchema,
+    tags: { type: "array", items: { type: "string" } },
+  },
+} as const
+
 const draftSchema = {
   type: "object",
   description: "完整简历草稿，用于整篇生成/重写",
@@ -64,19 +94,7 @@ const draftSchema = {
           title: { type: "string" },
           rows: {
             type: "array",
-            items: {
-              type: "object",
-              properties: {
-                type: { type: "string", enum: ["rich", "tags"] },
-                columns: { type: "integer", enum: [1, 2, 3, 4] },
-                texts: {
-                  type: "array",
-                  items: { type: "string" },
-                  description: "rich 行各列文本，数量应等于 columns；支持以 - 开头表示项目符号，\\n 换行",
-                },
-                tags: { type: "array", items: { type: "string" } },
-              },
-            },
+            items: rowSchema,
           },
         },
         required: ["title"],
@@ -105,6 +123,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         properties: {
           elementId: { type: "string", description: "目标元素 id（形如 element#xxx 中的 xxx）" },
           text: { type: "string", description: "新的纯文本内容；可用 \\n 换行，行首 - 表示项目符号" },
+          bold: { type: "boolean", description: "可选：覆盖是否加粗；省略则继承原元素" },
+          fontSize: { type: "string", description: "可选：覆盖字号，如 12pt；省略则继承原元素" },
+          fontFamily: { type: "string", description: "可选：覆盖字体；省略则继承原元素" },
+          textAlign: { type: "string", enum: ["left", "center", "right", "justify"], description: "可选：覆盖对齐" },
           summary: { type: "string", description: "本次修改的简短说明（中文）" },
         },
         required: ["elementId", "text"],
@@ -152,15 +174,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
           afterModuleId: { type: "string", description: "插入到该模块之后；省略则追加到末尾" },
           rows: {
             type: "array",
-            items: {
-              type: "object",
-              properties: {
-                type: { type: "string", enum: ["rich", "tags"] },
-                columns: { type: "integer", enum: [1, 2, 3, 4] },
-                texts: { type: "array", items: { type: "string" } },
-                tags: { type: "array", items: { type: "string" } },
-              },
-            },
+            items: rowSchema,
           },
         },
         required: ["title"],
@@ -205,10 +219,33 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
           type: { type: "string", enum: ["rich", "tags"] },
           columns: { type: "integer", enum: [1, 2, 3, 4], description: "富文本行的列数" },
           texts: { type: "array", items: { type: "string" }, description: "各列文本" },
+          formats: columnFormatsSchema,
           tags: { type: "array", items: { type: "string" }, description: "标签行内容" },
           afterRowId: { type: "string", description: "插入到该行之后；省略则追加" },
         },
         required: ["moduleId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_rows",
+      description:
+        "向同一模块一次性新增多行。新增完整项目/教育/工作经历时优先使用本工具，把标题行、详情行、标签行作为一个原子 diff 一起插入，避免后续行插到上一个项目下面。",
+      parameters: {
+        type: "object",
+        properties: {
+          moduleId: { type: "string" },
+          afterRowId: { type: "string", description: "整体插入到该行之后；省略则追加到模块末尾" },
+          rows: {
+            type: "array",
+            minItems: 1,
+            items: rowSchema,
+            description: "按显示顺序排列的多行内容；每行可单独设置 columns/texts/formats/tags",
+          },
+        },
+        required: ["moduleId", "rows"],
       },
     },
   },

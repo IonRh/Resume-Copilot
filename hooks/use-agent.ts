@@ -202,6 +202,7 @@ function stepLabel(tool: string): string {
     remove_module: "删除模块",
     reorder_modules: "重排模块",
     add_row: "新增行",
+    add_rows: "新增多行",
     remove_row: "删除行",
     set_row_tags: "更新标签",
     set_personal_info: "更新个人信息",
