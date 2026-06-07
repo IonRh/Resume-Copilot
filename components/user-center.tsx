@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,9 +18,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
-import type { StoredResume } from "@/types/resume"
+import type { ResumeData, StoredResume } from "@/types/resume"
 import { deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
 import { createDefaultResumeData } from "@/lib/utils"
+import {
+  getResumeParentId,
+  getResumeVariantLabel,
+  normalizeResumeTitle,
+  parseResumeVariantTitle,
+} from "@/lib/resume-relations"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import ExportButton from "@/components/export-button"
 import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
@@ -30,6 +36,186 @@ type SortDir = "asc" | "desc"
 
 const POLISH_PROMPT =
   "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。"
+
+type ResumeFamily = {
+  id: string
+  parent: StoredResume
+  variants: StoredResume[]
+  createdAt: number
+  latestUpdatedAt: number
+}
+
+type VisibleResumeFamily = ResumeFamily & {
+  visibleVariants: StoredResume[]
+}
+
+function timeOf(value?: string): number {
+  const time = value ? new Date(value).getTime() : 0
+  return Number.isFinite(time) ? time : 0
+}
+
+function titleOf(entry: StoredResume): string {
+  return entry.resumeData.title || "未命名"
+}
+
+function isVariantResume(entry: StoredResume): boolean {
+  return entry.resumeData.resumeKind === "jdVariant" || !!getResumeParentId(entry.resumeData) || !!parseResumeVariantTitle(entry.resumeData.title)
+}
+
+function collectRichText(value: unknown, bucket: string[]) {
+  if (!value || typeof value !== "object") return
+  const node = value as { text?: unknown; content?: unknown }
+  if (typeof node.text === "string") bucket.push(node.text)
+  if (Array.isArray(node.content)) {
+    node.content.forEach((child) => collectRichText(child, bucket))
+  }
+}
+
+function comparableResumeText(data: ResumeData): string {
+  const bucket: string[] = [data.title || ""]
+  data.personalInfoSection?.personalInfo?.forEach((item) => {
+    bucket.push(item.label, item.value?.content || "", item.value?.title || "")
+  })
+  data.jobIntentionSection?.items?.forEach((item) => bucket.push(item.label, item.value || ""))
+  data.modules?.forEach((module) => {
+    bucket.push(module.title)
+    module.rows?.forEach((row) => {
+      row.tags?.forEach((tag) => bucket.push(tag))
+      row.elements?.forEach((element) => collectRichText(element.content, bucket))
+    })
+  })
+  return bucket.join("").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, 6000)
+}
+
+function gramSet(text: string): Set<string> {
+  if (text.length <= 2) return new Set(text ? [text] : [])
+  const grams = new Set<string>()
+  for (let i = 0; i < text.length - 1; i += 1) {
+    grams.add(text.slice(i, i + 2))
+  }
+  return grams
+}
+
+function overlapScore(a: Set<string>, b: Set<string>): number {
+  const base = Math.min(a.size, b.size)
+  if (base === 0) return 0
+  let hits = 0
+  a.forEach((gram) => {
+    if (b.has(gram)) hits += 1
+  })
+  return hits / base
+}
+
+function compareEntries(a: StoredResume, b: StoredResume, sortKey: SortKey, sortDir: SortDir): number {
+  if (sortKey === "name") {
+    const value = titleOf(a).localeCompare(titleOf(b), "zh-CN")
+    return sortDir === "asc" ? value : -value
+  }
+  const field = sortKey === "createdAt" ? "createdAt" : "updatedAt"
+  const value = timeOf(a[field]) - timeOf(b[field])
+  return sortDir === "asc" ? value : -value
+}
+
+function compareFamilies(a: ResumeFamily, b: ResumeFamily, sortKey: SortKey, sortDir: SortDir): number {
+  if (sortKey === "name") {
+    const value = titleOf(a.parent).localeCompare(titleOf(b.parent), "zh-CN")
+    return sortDir === "asc" ? value : -value
+  }
+  const value = sortKey === "createdAt" ? a.createdAt - b.createdAt : a.latestUpdatedAt - b.latestUpdatedAt
+  return sortDir === "asc" ? value : -value
+}
+
+function buildResumeFamilies(entries: StoredResume[]): ResumeFamily[] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  const families = new Map<string, ResumeFamily>()
+  const assigned = new Set<string>()
+  const textCache = new Map<string, Set<string>>()
+
+  const gramsFor = (entry: StoredResume) => {
+    const cached = textCache.get(entry.id)
+    if (cached) return cached
+    const grams = gramSet(comparableResumeText(entry.resumeData))
+    textCache.set(entry.id, grams)
+    return grams
+  }
+
+  const ensureFamily = (parent: StoredResume) => {
+    const existing = families.get(parent.id)
+    if (existing) return existing
+    const family: ResumeFamily = {
+      id: parent.id,
+      parent,
+      variants: [],
+      createdAt: timeOf(parent.createdAt),
+      latestUpdatedAt: timeOf(parent.updatedAt),
+    }
+    families.set(parent.id, family)
+    return family
+  }
+
+  entries.forEach((entry) => {
+    if (!isVariantResume(entry)) ensureFamily(entry)
+  })
+
+  const attach = (variant: StoredResume, parent: StoredResume) => {
+    if (variant.id === parent.id) return false
+    const family = ensureFamily(parent)
+    if (!family.variants.some((item) => item.id === variant.id)) {
+      family.variants.push(variant)
+    }
+    family.latestUpdatedAt = Math.max(family.latestUpdatedAt, timeOf(variant.updatedAt))
+    assigned.add(variant.id)
+    return true
+  }
+
+  entries.forEach((entry) => {
+    const parentId = getResumeParentId(entry.resumeData)
+    if (!parentId) return
+    const parent = byId.get(parentId)
+    if (parent) attach(entry, parent)
+  })
+
+  entries.forEach((entry) => {
+    if (assigned.has(entry.id) || !isVariantResume(entry)) return
+    const parsed = parseResumeVariantTitle(entry.resumeData.title)
+    const parentTitle = parsed?.baseTitle || entry.resumeData.parentResumeTitle
+    if (!parentTitle) return
+    const normalizedParentTitle = normalizeResumeTitle(parentTitle)
+    let best: { entry: StoredResume; score: number } | null = null
+
+    for (const candidate of entries) {
+      if (candidate.id === entry.id || isVariantResume(candidate)) continue
+      const normalizedCandidateTitle = normalizeResumeTitle(candidate.resumeData.title)
+      if (!normalizedCandidateTitle) continue
+
+      let score = normalizedCandidateTitle === normalizedParentTitle ? 100 : 0
+      if (score === 0 && normalizedCandidateTitle.includes(normalizedParentTitle)) score = 45
+      if (score === 0) continue
+
+      score += overlapScore(gramsFor(entry), gramsFor(candidate)) * 40
+      if (timeOf(candidate.createdAt) <= timeOf(entry.createdAt)) score += 4
+      const daysApart = Math.abs(timeOf(entry.createdAt) - timeOf(candidate.updatedAt)) / 86400000
+      score += Math.max(0, 6 - Math.min(6, daysApart))
+
+      if (!best || score > best.score) best = { entry: candidate, score }
+    }
+
+    if (best && best.score >= 90) attach(entry, best.entry)
+  })
+
+  entries.forEach((entry) => {
+    if (!assigned.has(entry.id) && !families.has(entry.id)) ensureFamily(entry)
+  })
+
+  return Array.from(families.values()).map((family) => ({
+    ...family,
+    variants: [...family.variants].sort((a, b) => compareEntries(a, b, "updatedAt", "desc")),
+    latestUpdatedAt: Math.max(
+      timeOf(family.parent.updatedAt),
+      ...family.variants.map((variant) => timeOf(variant.updatedAt)),
+    ),
+  }))
+}
 
 export default function UserCenter() {
   const router = useRouter()
@@ -48,6 +234,7 @@ export default function UserCenter() {
   })
   const [polishDialogOpen, setPolishDialogOpen] = useState(false)
   const [polishResumeId, setPolishResumeId] = useState<string | undefined>(undefined)
+  const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(() => {
     let cancelled = false
@@ -80,29 +267,37 @@ export default function UserCenter() {
     loadExampleTemplate()
   }, [])
 
-  const filteredSorted = useMemo(() => {
-    const list = items.filter((it) =>
-      !keyword.trim() || it.resumeData.title.toLowerCase().includes(keyword.trim().toLowerCase())
-    )
-    const sorted = [...list].sort((a, b) => {
-      let va: string | number = ""
-      let vb: string | number = ""
-      if (sortKey === "name") {
-        va = a.resumeData.title || ""
-        vb = b.resumeData.title || ""
-        return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
-      }
-      if (sortKey === "createdAt") {
-        va = new Date(a.createdAt).getTime()
-        vb = new Date(b.createdAt).getTime()
-      } else {
-        va = new Date(a.updatedAt).getTime()
-        vb = new Date(b.updatedAt).getTime()
-      }
-      return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number)
-    })
-    return sorted
-  }, [items, keyword, sortKey, sortDir])
+  const resumeFamilies = useMemo(() => buildResumeFamilies(items), [items])
+  const variantCount = useMemo(
+    () => resumeFamilies.reduce((sum, family) => sum + family.variants.length, 0),
+    [resumeFamilies],
+  )
+
+  const visibleFamilies = useMemo<VisibleResumeFamily[]>(() => {
+    const needle = keyword.trim().toLowerCase()
+    const matches = (entry: StoredResume) =>
+      !needle ||
+      titleOf(entry).toLowerCase().includes(needle) ||
+      getResumeVariantLabel(entry.resumeData).toLowerCase().includes(needle)
+
+    return resumeFamilies
+      .map((family) => {
+        const parentMatches = matches(family.parent)
+        const matchingVariants = family.variants.filter(matches)
+        if (!parentMatches && matchingVariants.length === 0) return null
+        return {
+          ...family,
+          visibleVariants: parentMatches ? family.variants : matchingVariants,
+        }
+      })
+      .filter((family): family is VisibleResumeFamily => Boolean(family))
+      .sort((a, b) => compareFamilies(a, b, sortKey, sortDir))
+  }, [resumeFamilies, keyword, sortKey, sortDir])
+
+  const visibleResumeIds = useMemo(
+    () => visibleFamilies.flatMap((family) => [family.parent.id, ...family.visibleVariants.map((variant) => variant.id)]),
+    [visibleFamilies],
+  )
 
   const SortArrows = ({ field }: { field: SortKey }) => {
     const activeAsc = sortKey === field && sortDir === "asc"
@@ -133,8 +328,12 @@ export default function UserCenter() {
   }
 
   const toggleSelectAll = (checked: boolean) => {
-    if (checked) setSelected(new Set(items.map((i) => i.id)))
-    else setSelected(new Set())
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) visibleResumeIds.forEach((id) => next.add(id))
+      else visibleResumeIds.forEach((id) => next.delete(id))
+      return next
+    })
   }
 
   // 将初始化数据预加载并写入 sessionStorage，然后再跳转，避免在新页面内数据“闪变”
@@ -157,6 +356,19 @@ export default function UserCenter() {
   const handleClone = (id: string) => {
     // 不立即保存，带上 cloneId 进入新建编辑页
     router.push(`/edit/new?clone=${encodeURIComponent(id)}`)
+  }
+
+  const handleCreateVariant = (id: string) => {
+    router.push(`/edit/new?clone=${encodeURIComponent(id)}&variant=jd`)
+  }
+
+  const toggleFamilyCollapsed = (id: string) => {
+    setCollapsedFamilies((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   // 最近更新的一份简历，作为求职工具的默认操作对象
@@ -230,6 +442,8 @@ export default function UserCenter() {
     }
   }
 
+  const allVisibleSelected = visibleResumeIds.length > 0 && visibleResumeIds.every((id) => selected.has(id))
+
   return (
     <div className="min-h-screen bg-background">
       {/* AI 求职工具路口 */}
@@ -283,18 +497,26 @@ export default function UserCenter() {
         <div className="flex items-center gap-3">
           <Icon icon="mdi:account" className="w-6 h-6 text-primary" />
           <h1 className="text-lg font-semibold">我的简历</h1>
-          <Badge variant="secondary">{items.length}</Badge>
+          <Badge variant="secondary">{resumeFamilies.length} 组</Badge>
+          {variantCount > 0 ? <Badge variant="outline">{variantCount} 份 JD 子简历</Badge> : null}
         </div>
-        {items.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="搜索简历名称"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              className="w-56"
-            />
-            {null}
-            <Separator orientation="vertical" className="h-6" />
+        <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <>
+              <Input
+                placeholder="搜索简历名称"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                className="w-56"
+              />
+              <Separator orientation="vertical" className="h-6" />
+            </>
+          )}
+          <Button variant="outline" className="gap-2" onClick={() => router.push("/applications")}>
+            <Icon icon="mdi:briefcase-check-outline" className="w-4 h-4" /> 投递管理
+          </Button>
+          {items.length > 0 && (
+            <>
             <Button onClick={handleCreate} className="gap-2">
               <Icon icon="mdi:plus" className="w-4 h-4" /> 创建简历
             </Button>
@@ -306,8 +528,9 @@ export default function UserCenter() {
             >
               <Icon icon="mdi:trash-can" className="w-4 h-4" /> 批量删除
             </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       <Separator />
@@ -319,23 +542,28 @@ export default function UserCenter() {
             <input
               type="checkbox"
               className="h-4 w-4 rounded border"
-              checked={selected.size > 0 && selected.size === items.length}
+              checked={allVisibleSelected}
               onChange={(e) => toggleSelectAll(e.target.checked)}
             />
-            <span className="text-sm text-muted-foreground">已选 {selected.size} 项</span>
+            <span className="text-sm text-muted-foreground">
+              已选 {selected.size} 项
+              {keyword.trim() ? `，当前筛选 ${visibleResumeIds.length} 项` : ""}
+            </span>
           </div>
         )}
         {loading ? (
           <div className="py-16 text-center text-sm text-muted-foreground">正在读取简历...</div>
-        ) : filteredSorted.length === 0 ? (
+        ) : visibleFamilies.length === 0 ? (
           <div className="py-16">
             <div className="mx-auto max-w-xl text-center rounded-xl border bg-muted/30 p-10 shadow-sm">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                 <Icon icon="mdi:file-document-edit" className="h-8 w-8 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold">暂无简历</h3>
+              <h3 className="text-xl font-semibold">{items.length === 0 ? "暂无简历" : "没有匹配的简历"}</h3>
               <div className="mt-2 inline-flex flex-col items-stretch">
-                <p className="text-sm text-muted-foreground">点击“创建简历”开始，后台会自动保存你的简历数据</p>
+                <p className="text-sm text-muted-foreground">
+                  {items.length === 0 ? "点击“创建简历”开始，后台会自动保存你的简历数据" : "换个关键词，或清空搜索后查看全部母子简历"}
+                </p>
                 <div className="mt-6 flex items-center justify-between">
                   <Button onClick={handleCreate} className="gap-2 shrink-0">
                     <Icon icon="mdi:plus" className="w-4 h-4" /> 创建简历
@@ -356,7 +584,7 @@ export default function UserCenter() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10"></TableHead>
-                <TableHead className="text-center">编号</TableHead>
+                <TableHead className="text-center">层级</TableHead>
                 <TableHead className="text-center">头像</TableHead>
                 <TableHead>
                   <div className="flex items-center justify-start">名称 <SortArrows field="name" /></div>
@@ -367,63 +595,162 @@ export default function UserCenter() {
                 <TableHead className="text-center">
                   <div className="flex items-center justify-center">更新时间 <SortArrows field="updatedAt" /></div>
                 </TableHead>
-                <TableHead className="text-center w-[360px]">
+                <TableHead className="text-center w-[430px]">
                   <div className="flex items-center justify-center">操作</div>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredSorted.map((it) => (
-                <TableRow key={it.id}>
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border"
-                      checked={selected.has(it.id)}
-                      onChange={(e) => toggleSelect(it.id, e.target.checked)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground text-center">{it.id.slice(0, 8)}</TableCell>
-                  <TableCell className="text-center">
-                    <div className="h-10 w-10 rounded-full overflow-hidden bg-muted flex items-center justify-center mx-auto">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={it.resumeData.avatar || "/not-set.png"}
-                        alt={it.resumeData.title}
-                        className="h-full w-full object-cover"
-                        onError={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/default-avatar.jpg" }}
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{it.resumeData.title || "未命名"}</TableCell>
-                  <TableCell className="text-xs text-center">{new Date(it.createdAt).toLocaleString()}</TableCell>
-                  <TableCell className="text-xs text-center">{new Date(it.updatedAt).toLocaleString()}</TableCell>
-                  <TableCell className="text-right w-[360px]">
-                    <div className="flex items-center gap-2 justify-end">
-                      <Button variant="ghost" className="gap-2" onClick={() => router.push(`/view/${it.id}`)}>
-                        <Icon icon="mdi:eye" className="w-4 h-4" /> 查看
-                      </Button>
-                      <ExportButton
-                        resumeData={it.resumeData}
-                        variant="ghost"
-                      />
-                      <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${it.id}`)}>
-                        <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
-                      </Button>
-                      <Button variant="ghost" className="gap-2" onClick={() => handleClone(it.id)}>
-                        <Icon icon="mdi:content-copy" className="w-4 h-4" /> 克隆
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="gap-2 hover:bg-destructive hover:text-white"
-                        onClick={() => { setSelected(new Set([it.id])); setConfirmOpen(true) }}
-                      >
-                        <Icon icon="mdi:delete" className="w-4 h-4" /> 删除
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {visibleFamilies.map((family) => {
+                const collapsed = collapsedFamilies.has(family.id) && !keyword.trim()
+                const childRows = collapsed ? [] : family.visibleVariants
+                const parent = family.parent
+                return (
+                  <Fragment key={family.id}>
+                    <TableRow className="bg-muted/20 hover:bg-muted/40">
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border"
+                          checked={selected.has(parent.id)}
+                          onChange={(e) => toggleSelect(parent.id, e.target.checked)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={family.visibleVariants.length === 0}
+                            onClick={() => toggleFamilyCollapsed(family.id)}
+                            title={collapsed ? "展开子简历" : "收起子简历"}
+                          >
+                            <Icon icon={collapsed ? "mdi:chevron-right" : "mdi:chevron-down"} className="h-4 w-4" />
+                          </Button>
+                          <Badge variant="secondary" className="gap-1">
+                            <Icon icon="mdi:file-account-outline" className="h-3 w-3" />
+                            母
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="h-10 w-10 rounded-full overflow-hidden bg-muted flex items-center justify-center mx-auto">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={parent.resumeData.avatar || "/not-set.png"}
+                            alt={titleOf(parent)}
+                            className="h-full w-full object-cover"
+                            onError={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/default-avatar.jpg" }}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-semibold">{titleOf(parent)}</span>
+                          <Badge variant="outline">{family.variants.length} 子</Badge>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          编号 {parent.id.slice(0, 8)}
+                          {family.variants.length > 0 ? ` · 最近子简历更新 ${new Date(family.latestUpdatedAt).toLocaleString()}` : ""}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-center">{new Date(parent.createdAt).toLocaleString()}</TableCell>
+                      <TableCell className="text-xs text-center">{new Date(parent.updatedAt).toLocaleString()}</TableCell>
+                      <TableCell className="text-right w-[430px]">
+                        <div className="flex items-center gap-2 justify-end">
+                          <Button variant="ghost" className="gap-2" onClick={() => router.push(`/view/${parent.id}`)}>
+                            <Icon icon="mdi:eye" className="w-4 h-4" /> 查看
+                          </Button>
+                          <ExportButton resumeData={parent.resumeData} variant="ghost" />
+                          <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${parent.id}`)}>
+                            <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
+                          </Button>
+                          <Button variant="ghost" className="gap-2" onClick={() => handleCreateVariant(parent.id)}>
+                            <Icon icon="mdi:file-tree" className="w-4 h-4" /> JD 子版
+                          </Button>
+                          <Button variant="ghost" className="gap-2" onClick={() => handleClone(parent.id)}>
+                            <Icon icon="mdi:content-copy" className="w-4 h-4" /> 克隆
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="gap-2 hover:bg-destructive hover:text-white"
+                            onClick={() => { setSelected(new Set([parent.id])); setConfirmOpen(true) }}
+                          >
+                            <Icon icon="mdi:delete" className="w-4 h-4" /> 删除
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {childRows.map((it) => (
+                      <TableRow key={it.id} className="bg-background/60 hover:bg-muted/30">
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border"
+                            checked={selected.has(it.id)}
+                            onChange={(e) => toggleSelect(it.id, e.target.checked)}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                            <span className="h-px w-5 bg-border" />
+                            <Badge variant="outline" className="gap-1">
+                              <Icon icon="mdi:target" className="h-3 w-3" />
+                              子
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center mx-auto opacity-90">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={it.resumeData.avatar || parent.resumeData.avatar || "/not-set.png"}
+                              alt={titleOf(it)}
+                              className="h-full w-full object-cover"
+                              onError={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/default-avatar.jpg" }}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex min-w-0 items-center gap-2 pl-3">
+                            <Icon icon="mdi:subdirectory-arrow-right" className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate font-medium">{titleOf(it)}</span>
+                            <Badge variant="outline">{getResumeVariantLabel(it.resumeData)}</Badge>
+                          </div>
+                          <div className="mt-1 pl-10 text-xs text-muted-foreground">
+                            归属 {titleOf(parent)} · 编号 {it.id.slice(0, 8)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-center">{new Date(it.createdAt).toLocaleString()}</TableCell>
+                        <TableCell className="text-xs text-center">{new Date(it.updatedAt).toLocaleString()}</TableCell>
+                        <TableCell className="text-right w-[430px]">
+                          <div className="flex items-center gap-2 justify-end">
+                            <Button variant="ghost" className="gap-2" onClick={() => router.push(`/view/${it.id}`)}>
+                              <Icon icon="mdi:eye" className="w-4 h-4" /> 查看
+                            </Button>
+                            <ExportButton resumeData={it.resumeData} variant="ghost" />
+                            <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${it.id}`)}>
+                              <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
+                            </Button>
+                            <Button variant="ghost" className="gap-2" onClick={() => handleClone(it.id)}>
+                              <Icon icon="mdi:content-copy" className="w-4 h-4" /> 克隆
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="gap-2 hover:bg-destructive hover:text-white"
+                              onClick={() => { setSelected(new Set([it.id])); setConfirmOpen(true) }}
+                            >
+                              <Icon icon="mdi:delete" className="w-4 h-4" /> 删除
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         )}

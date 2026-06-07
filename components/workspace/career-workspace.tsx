@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, stashResumeForEdit, updateEntryData } from "@/lib/storage"
+import { buildJdVariantTitle, createJdVariantResumeData } from "@/lib/resume-relations"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
@@ -131,9 +132,16 @@ function CareerInner({
   const setJd = ws.setJd
   const setMode = ws.setMode
   const setKickoff = ws.setKickoff
+  const variantParent = useMemo(
+    () => ({
+      id: resumeData.parentResumeId || entryId,
+      title: resumeData.parentResumeTitle || initialData.parentResumeTitle || initialData.title || resumeData.title || "未命名",
+    }),
+    [entryId, initialData.parentResumeTitle, initialData.title, resumeData.parentResumeId, resumeData.parentResumeTitle, resumeData.title],
+  )
   const defaultVariantTitle = useMemo(
-    () => `${resumeData.title || "我的简历"}（岗位定制版）`,
-    [resumeData.title],
+    () => buildJdVariantTitle(variantParent.title || resumeData.title || "我的简历"),
+    [resumeData.title, variantParent.title],
   )
 
   const openVariantDialog = useCallback(() => {
@@ -150,7 +158,7 @@ function CareerInner({
     }
     setSavingVariant(true)
     try {
-      const variant: ResumeData = { ...resumeData, title }
+      const variant = createJdVariantResumeData(resumeData, variantParent, title)
       const entry = await createEntryFromData(variant)
       stashResumeForEdit(entry)
       toast({ title: "已另存定制版", description: `「${variant.title}」已保存到我的简历` })

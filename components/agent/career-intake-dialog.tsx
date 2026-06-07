@@ -62,6 +62,8 @@ export default function CareerIntakeDialog({
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const researchResultRef = useRef("")
+  // 面试研究 gate 只拦截一次，避免死循环；用户随后可正常进入
+  const finishGateUsedRef = useRef(false)
 
   // 打开时初始化对话；关闭时中止流
   useEffect(() => {
@@ -74,6 +76,7 @@ export default function CareerIntakeDialog({
       setBusy(false)
       setSelectedId(defaultResumeId ?? resumes[0]?.id)
       researchResultRef.current = ""
+      finishGateUsedRef.current = false
     } else {
       abortRef.current?.abort()
     }
@@ -203,6 +206,20 @@ export default function CareerIntakeDialog({
 
         const finish = toolCalls.find((c) => c.function.name === "finish_intake")
         if (finish) {
+          // 面试在进入前必须先做一次公司/岗位研究（仅拦一次，避免死循环）。
+          // JD 不拦：它只负责收集，详细分析交给工作台，避免抢活。
+          if (mode === "interview" && !researchResultRef.current && !finishGateUsedRef.current) {
+            finishGateUsedRef.current = true
+            historyRef.current.push({
+              role: "tool",
+              tool_call_id: finish.id,
+              name: finish.function.name,
+              content:
+                "（系统拦截）现在还不能进入面试台。用户已给出公司/岗位，请先调用 research_company_interview 做公司与岗位研究，并用一条消息呈现研究要点；若用户明确要求跳过研究或直接开始，则可以再次调用 finish_intake。",
+            })
+            continue
+          }
+
           let briefing = ""
           try {
             briefing = (JSON.parse(finish.function.arguments || "{}") as { briefing?: string }).briefing ?? ""

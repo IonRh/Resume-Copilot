@@ -1,5 +1,5 @@
-import WelcomePage from "@/components/welcome-page"
+import UserCenter from "@/components/user-center"
 
 export default function Home() {
-  return <WelcomePage />
+  return <UserCenter />
 }

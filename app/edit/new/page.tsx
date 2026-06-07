@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, getResumeById } from "@/lib/storage"
+import { createJdVariantResumeData } from "@/lib/resume-relations"
 import { useToast } from "@/hooks/use-toast"
 
 export default function NewEditPage() {
@@ -22,6 +23,7 @@ function NewEditPageContent() {
   const { toast } = useToast()
 
   const cloneId = search.get("clone")
+  const variantMode = search.get("variant") === "jd"
   const useExample = search.get("example") === "1" || search.get("example") === "true"
 
   // 从 sessionStorage 恢复用户中心预加载的数据
@@ -51,7 +53,17 @@ function NewEditPageContent() {
     setCloneLoaded(false)
     void getResumeById(cloneId)
       .then((entry) => {
-        if (!cancelled) setClonedData(entry ? { ...entry.resumeData } : undefined)
+        if (!cancelled) {
+          if (!entry) {
+            setClonedData(undefined)
+            return
+          }
+          const parent = {
+            id: entry.resumeData.parentResumeId || entry.id,
+            title: entry.resumeData.parentResumeTitle || entry.resumeData.title || "未命名",
+          }
+          setClonedData(variantMode ? createJdVariantResumeData(entry.resumeData, parent) : { ...entry.resumeData })
+        }
       })
       .catch((error) => {
         if (!cancelled) {
@@ -69,7 +81,7 @@ function NewEditPageContent() {
     return () => {
       cancelled = true
     }
-  }, [cloneId, toast])
+  }, [cloneId, toast, variantMode])
 
   const handleSave = async (current: ResumeData) => {
     try {

@@ -142,6 +142,14 @@ export interface ResumeModule {
 export interface ResumeData {
   /** 简历标题/姓名 */
   title: string
+  /** 若这是一份 JD 特化子简历，记录它归属的母简历 ID */
+  parentResumeId?: string
+  /** 母简历名称快照，仅用于展示兜底 */
+  parentResumeTitle?: string
+  /** 简历类型标记；旧数据可为空 */
+  resumeKind?: 'base' | 'jdVariant'
+  /** 子简历标签，例如“岗位定制版”或目标岗位名称 */
+  variantLabel?: string
   /** 简历标题是否居中显示 */
   centerTitle?: boolean
   /** 个人信息模块 */
