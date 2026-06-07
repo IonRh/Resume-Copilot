@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -15,8 +15,8 @@ import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
 import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
 import ResumePreview from "@/components/resume-preview"
 import ExportButton from "@/components/export-button"
-import AgentPanel from "@/components/agent/agent-panel"
-import type { WorkspaceSelection } from "@/lib/agent/types"
+import AgentPanel, { type AgentPanelHandle } from "@/components/agent/agent-panel"
+import type { AgentCard, WorkspaceSelection } from "@/lib/agent/types"
 
 type CareerMode = "jd" | "interview"
 
@@ -24,11 +24,15 @@ interface CareerWorkspaceProps {
   mode: CareerMode
   entryId: string
   initialData: ResumeData
+  sessionId?: string
   onBack?: () => void
 }
 
 export default function CareerWorkspace(props: CareerWorkspaceProps) {
   const storageKey = `resume.career.${props.mode}.${props.entryId}`
+  if (props.mode === "interview") {
+    return <InterviewWorkspace {...props} />
+  }
   return (
     <ResumeWorkspaceProvider initialData={props.initialData} storageKey={storageKey}>
       <CareerInner {...props} />
@@ -36,11 +40,79 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
   )
 }
 
-function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
+function InterviewWorkspace(props: CareerWorkspaceProps) {
+  const initialBriefing = useRef<{ briefing: string; sessionId: string } | null>(null)
+  if (initialBriefing.current === null && typeof window !== "undefined") {
+    let next = { briefing: "", sessionId: "" }
+    try {
+      const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { mode?: string; resumeId?: string; briefing?: string; sessionId?: string }
+        if (parsed.mode === props.mode && parsed.resumeId === props.entryId) {
+          window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
+          next = {
+            briefing: parsed.briefing || "",
+            sessionId: parsed.sessionId || "",
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    initialBriefing.current = next
+  }
+  const [briefing] = useState<string>(() => initialBriefing.current?.briefing || "")
+  const [sessionId] = useState<string>(() => props.sessionId || initialBriefing.current?.sessionId || `page-${Date.now()}`)
+  const storageScope = `${props.entryId}.${sessionId}`
+  const analysisStorageKey = `resume.career.${props.mode}.${storageScope}.analysis`
+  const interviewerStorageKey = `resume.career.${props.mode}.${storageScope}.interviewer`
+
+  return (
+    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={analysisStorageKey}>
+      <InterviewWorkspaceWithAnalysis {...props} briefing={briefing} interviewerStorageKey={interviewerStorageKey} />
+    </ResumeWorkspaceProvider>
+  )
+}
+
+function InterviewWorkspaceWithAnalysis({
+  briefing,
+  interviewerStorageKey,
+  ...props
+}: CareerWorkspaceProps & {
+  briefing: string
+  interviewerStorageKey: string
+}) {
+  const analysisWs = useResumeWorkspace()
+  const { setAgentOpen, setJd, setMode } = analysisWs
+
+  useEffect(() => {
+    setMode("interviewAnalysis")
+    setAgentOpen(true)
+  }, [setAgentOpen, setMode])
+
+  useEffect(() => {
+    if (briefing) setJd(briefing)
+  }, [briefing, setJd])
+
+  return (
+    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={interviewerStorageKey}>
+      <CareerInner {...props} briefing={briefing} analysisWorkspace={analysisWs} />
+    </ResumeWorkspaceProvider>
+  )
+}
+
+function CareerInner({
+  mode,
+  entryId,
+  onBack,
+  briefing,
+  analysisWorkspace,
+}: CareerWorkspaceProps & { briefing?: string; analysisWorkspace?: ReturnType<typeof useResumeWorkspace> }) {
   const ws = useResumeWorkspace()
   const profile = AGENT_PROFILES[mode]
   const briefingReadRef = useRef(false)
   const skipFirstSaveRef = useRef(true)
+  const analysisPanelRef = useRef<AgentPanelHandle | null>(null)
   const { toast } = useToast()
   const router = useRouter()
 
@@ -70,17 +142,21 @@ function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
     briefingReadRef.current = true
     ws.setMode(mode)
     ws.setAgentOpen(true)
-    try {
-      const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as { mode?: string; resumeId?: string; briefing?: string }
-        if (parsed.mode === mode && parsed.resumeId === entryId) {
-          window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
-          if (parsed.briefing) ws.setJd(parsed.briefing)
+    if (analysisWorkspace) ws.clearSelection()
+    if (briefing) ws.setJd(briefing)
+    else {
+      try {
+        const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { mode?: string; resumeId?: string; briefing?: string }
+          if (parsed.mode === mode && parsed.resumeId === entryId) {
+            window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
+            if (parsed.briefing) ws.setJd(parsed.briefing)
+          }
         }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
     ws.setKickoff(profile.intake?.initialPrompt ?? "")
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,6 +183,46 @@ function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
   const onRequestAI = useCallback(
     (selection: WorkspaceSelection) => ws.setSelection(selection),
     [ws],
+  )
+
+  const latestInterviewQuestion = useCallback(() => {
+    const turns = ws.turns
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "assistant" && turns[i].content.trim()) return turns[i].content.trim()
+      const cards = turns[i].cards || []
+      for (let j = cards.length - 1; j >= 0; j--) {
+        const card = cards[j] as AgentCard
+        if (card.type === "interview" && card.questions.length) {
+          const first = card.questions[0]
+          return [
+            card.currentIndex && card.total ? `第 ${card.currentIndex}/${card.total} 题` : "",
+            first.kind ? `【${first.kind}】` : "",
+            first.question,
+          ].filter(Boolean).join(" ")
+        }
+      }
+    }
+    return "（暂未找到上一题，请结合当前面试上下文分析用户回答。）"
+  }, [ws.turns])
+
+  const onInterviewAnswer = useCallback(
+    (answer: string) => {
+      if (!analysisWorkspace || mode !== "interview") return
+      const question = latestInterviewQuestion()
+      const prompt = [
+        "请分析这一轮模拟面试回答。你是左侧分析建议 Agent，不是面试官；不要继续出正式面试题。",
+        "",
+        "【本轮面试官问题】",
+        question,
+        "",
+        "【用户回答】",
+        answer,
+        "",
+        "请按「单题评分 / 回答亮点 / 主要问题 / 面试官可能追问 / 可直接复述版本」给出简洁分析。",
+      ].join("\n")
+      analysisPanelRef.current?.send(prompt, { displayText: "模型查看了你的面试回答，正在分析这一轮表现。" })
+    },
+    [analysisWorkspace, latestInterviewQuestion, mode],
   )
 
   return (
@@ -155,20 +271,28 @@ function CareerInner({ mode, entryId, onBack }: CareerWorkspaceProps) {
         </div>
       </div>
 
-      <div className="career-body">
+      <div className={`career-body ${analysisWorkspace ? "career-body-interview" : ""}`}>
+        {analysisWorkspace ? (
+          <AgentPanel
+            ref={analysisPanelRef}
+            lockedMode="interviewAnalysis"
+            hideSessionControls
+            workspace={analysisWorkspace}
+          />
+        ) : null}
         <div className="rw-preview">
           <div className="p-4">
             <ResumePreview
               resumeData={resumeData}
-              interactive
-              selectedId={ws.selection?.id ?? null}
+              interactive={!analysisWorkspace}
+              selectedId={analysisWorkspace ? null : ws.selection?.id ?? null}
               highlightedIds={ws.highlightedIds}
-              onSelect={ws.setSelection}
-              onRequestAI={onRequestAI}
+              onSelect={analysisWorkspace ? undefined : ws.setSelection}
+              onRequestAI={analysisWorkspace ? undefined : onRequestAI}
             />
           </div>
         </div>
-        <AgentPanel lockedMode={mode} />
+        <AgentPanel lockedMode={mode} onUserSubmit={onInterviewAnswer} />
       </div>
     </div>
   )

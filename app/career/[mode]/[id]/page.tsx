@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@iconify/react"
 import type { StoredResume } from "@/types/resume"
@@ -14,6 +14,7 @@ const VALID_MODES: CareerMode[] = ["jd", "interview"]
 export default function CareerPage({ params }: { params: Promise<{ mode: string; id: string }> }) {
   const { mode, id } = use(params)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [entry, setEntry] = useState<StoredResume | null>(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -49,6 +50,7 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
         mode={mode as CareerMode}
         entryId={id}
         initialData={entry.resumeData}
+        sessionId={searchParams.get("session") || undefined}
         onBack={() => router.push("/")}
       />
     </main>

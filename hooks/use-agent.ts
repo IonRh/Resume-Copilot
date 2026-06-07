@@ -1,18 +1,42 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useResumeWorkspace } from "@/lib/agent/store"
+import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { buildResumeOutline, genId } from "@/lib/agent/changeset"
 import { executeTool, READONLY_TOOLS } from "@/lib/agent/tools"
 import { buildSystemPrompt } from "@/lib/agent/prompts"
 import { streamChat } from "@/lib/agent/stream"
-import type { ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
+import {
+  EDIT_TOOL_SCHEMAS,
+  INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
+  INTERVIEWER_TOOL_SCHEMAS,
+  JD_TOOL_SCHEMAS,
+  SCORE_TOOL_SCHEMAS,
+} from "@/lib/agent/tool-schemas"
+import type { AgentMode, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
 
 const MAX_ITERATIONS = 8
 const HISTORY_LIMIT = 24
 
-export function useAgent() {
-  const ws = useResumeWorkspace()
+function toolsForMode(mode: AgentMode) {
+  switch (mode) {
+    case "score":
+      return SCORE_TOOL_SCHEMAS
+    case "jd":
+      return JD_TOOL_SCHEMAS
+    case "interview":
+      return INTERVIEWER_TOOL_SCHEMAS
+    case "interviewAnalysis":
+      return INTERVIEW_ANALYSIS_TOOL_SCHEMAS
+    case "edit":
+    default:
+      return EDIT_TOOL_SCHEMAS
+  }
+}
+
+export function useAgent(workspace?: WorkspaceContextValue) {
+  const contextWorkspace = useResumeWorkspace()
+  const ws = workspace ?? contextWorkspace
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const historyRef = useRef<ChatMessage[]>([])
@@ -65,10 +89,11 @@ export function useAgent() {
 
           const trimmedHistory = historyRef.current.slice(-HISTORY_LIMIT)
           const messages = [system, ...trimmedHistory]
+          const streamOptions = { tools: toolsForMode(ws.mode) }
 
           const { content, toolCalls } = await streamChat(
             messages,
-            { useTools: true },
+            streamOptions,
             controller.signal,
             (delta) => {
               ws.appendAssistantText(assistantId, delta)
@@ -92,6 +117,9 @@ export function useAgent() {
             } catch {
               parsed = {}
             }
+            if (call.function.name === "research_company_interview" && typeof parsed.jd !== "string" && ws.jd.trim()) {
+              parsed.jd = ws.jd
+            }
 
             const stepId = genId("step")
             const isReadonly = READONLY_TOOLS.has(call.function.name)
@@ -102,7 +130,7 @@ export function useAgent() {
               status: "running",
             })
 
-            const result = executeTool(call.function.name, parsed, ws.resumeRef.current)
+            const result = await executeTool(call.function.name, parsed, ws.resumeRef.current)
 
             if (result.change) {
               ws.stageChange(result.change)
@@ -113,7 +141,13 @@ export function useAgent() {
             }
             ws.patchStep(assistantId, stepId, {
               status: result.ok ? "done" : "error",
-              detail: result.change?.summary,
+              detail:
+                result.change?.summary ||
+                (call.function.name === "research_company_interview"
+                  ? result.ok
+                    ? "研究完成"
+                    : result.message.slice(0, 80)
+                  : undefined),
             })
 
             historyRef.current.push({
@@ -149,17 +183,18 @@ export function useAgent() {
   )
 
   const send = useCallback(
-    async (rawText: string, opts?: { selection?: WorkspaceSelection | null }) => {
+    async (rawText: string, opts?: { selection?: WorkspaceSelection | null; displayText?: string }) => {
       const text = rawText.trim()
       if (!text || running) return
 
       const selection = opts?.selection ?? ws.selection
+      const visibleText = opts?.displayText?.trim() || text
       lastSelectionRef.current = selection
 
       ws.addTurn({
         id: genId("turn"),
         role: "user",
-        content: text,
+        content: visibleText,
         selectionLabel: selection?.label,
       })
       const assistantId = genId("turn")
@@ -195,6 +230,7 @@ export function useAgent() {
 function stepLabel(tool: string): string {
   const map: Record<string, string> = {
     get_resume: "读取简历结构",
+    research_company_interview: "深入研究公司中",
     update_element_text: "改写文本",
     update_title: "更新标题",
     update_module: "更新模块标题",
@@ -212,7 +248,9 @@ function stepLabel(tool: string): string {
     replace_resume: "整篇生成简历",
     present_score_report: "生成评分诊断",
     present_jd_match: "分析 JD 匹配",
-    present_interview_questions: "准备面试问题",
+    plan_interview_questions: "规划面试问题",
+    present_interview_question: "展示当前面试题",
+    present_interview_questions: "展示面试问题",
     present_interview_report: "生成面试报告",
   }
   return map[tool] || tool

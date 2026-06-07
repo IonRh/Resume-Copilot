@@ -15,6 +15,7 @@ import {
 import { AGENT_PROFILES, INTAKE_TOOL } from "@/lib/agent/prompts"
 import { buildResumeOutline } from "@/lib/agent/changeset"
 import { streamChat } from "@/lib/agent/stream"
+import { INTERVIEW_INTAKE_TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
 import { getResumeById } from "@/lib/storage"
 import type { ChatMessage } from "@/lib/agent/types"
 import type { StoredResume } from "@/types/resume"
@@ -23,8 +24,9 @@ import { Markdown } from "./markdown"
 type IntakeMode = "jd" | "interview"
 
 interface Msg {
-  role: "assistant" | "user"
+  role: "assistant" | "user" | "tool"
   content: string
+  status?: "running" | "done" | "error"
 }
 
 interface CareerIntakeDialogProps {
@@ -59,6 +61,7 @@ export default function CareerIntakeDialog({
   const historyRef = useRef<ChatMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const researchResultRef = useRef("")
 
   // 打开时初始化对话；关闭时中止流
   useEffect(() => {
@@ -70,6 +73,7 @@ export default function CareerIntakeDialog({
       setError(null)
       setBusy(false)
       setSelectedId(defaultResumeId ?? resumes[0]?.id)
+      researchResultRef.current = ""
     } else {
       abortRef.current?.abort()
     }
@@ -84,13 +88,17 @@ export default function CareerIntakeDialog({
   const finalize = (briefing: string) => {
     const id = selectedId ?? resumes[0]?.id
     if (!id) return
+    const sessionId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     try {
-      sessionStorage.setItem(CAREER_BRIEFING_KEY, JSON.stringify({ mode, resumeId: id, briefing }))
+      sessionStorage.setItem(CAREER_BRIEFING_KEY, JSON.stringify({ mode, resumeId: id, briefing, sessionId }))
     } catch {
       /* 退化：无 briefing 也能进入 */
     }
     onOpenChange(false)
-    router.push(`/career/${mode}/${id}`)
+    router.push(mode === "interview" ? `/career/${mode}/${id}?session=${encodeURIComponent(sessionId)}` : `/career/${mode}/${id}`)
   }
 
   const briefingFromHistory = () =>
@@ -99,6 +107,41 @@ export default function CareerIntakeDialog({
       .map((m) => m.content as string)
       .join("\n\n")
       .trim()
+
+  const intakeTools = mode === "interview" ? [INTAKE_TOOL, ...INTERVIEW_INTAKE_TOOL_SCHEMAS] : [INTAKE_TOOL]
+
+  const runResearch = async (args: Record<string, unknown>, outline: string): Promise<string> => {
+    setMessages((m) => [
+      ...m,
+      { role: "tool", content: "深入研究公司中", status: "running" },
+    ])
+    const res = await fetch("/api/agent/research", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        company: typeof args.company === "string" ? args.company : "",
+        role: typeof args.role === "string" ? args.role : "",
+        jd: typeof args.jd === "string" && args.jd.trim() ? args.jd : briefingFromHistory(),
+        resumeOutline: outline,
+      }),
+    })
+    const payload = (await res.json().catch(() => ({}))) as { research?: string; error?: string; detail?: string }
+    const message = payload.research || payload.error || payload.detail || `研究服务返回 ${res.status}`
+    setMessages((m) =>
+      m.map((item, index) =>
+        index === m.findIndex((candidate) => candidate.role === "tool" && candidate.status === "running")
+          ? { ...item, content: res.ok ? "公司与岗位研究完成" : message, status: res.ok ? "done" : "error" }
+          : item,
+      ),
+    )
+    if (!res.ok) return `研究失败：${message}\n\n请明确询问用户：是否重试研究，还是直接开始模拟面试。`
+    researchResultRef.current = message
+    return message
+  }
+
+  const enoughAction = () => {
+    finalize(briefingFromHistory())
+  }
 
   const send = async (raw: string) => {
     const text = raw.trim()
@@ -124,30 +167,56 @@ export default function CareerIntakeDialog({
 
     try {
       setStreamText("")
-      const { content, toolCalls } = await streamChat(
-        [system, ...historyRef.current.slice(-20)],
-        { tools: [INTAKE_TOOL], toolChoice: "auto" },
-        controller.signal,
-        (delta) => setStreamText((p) => p + delta),
-      )
+      for (let i = 0; i < 4; i++) {
+        const { content, toolCalls } = await streamChat(
+          [system, ...historyRef.current.slice(-20)],
+          { tools: intakeTools, toolChoice: "auto" },
+          controller.signal,
+          (delta) => setStreamText((p) => p + delta),
+        )
 
-      historyRef.current.push({
-        role: "assistant",
-        content: content || null,
-        tool_calls: toolCalls.length ? toolCalls : undefined,
-      })
-      if (content) setMessages((m) => [...m, { role: "assistant", content }])
-      setStreamText("")
+        const research = toolCalls.find((c) => c.function.name === "research_company_interview")
+        historyRef.current.push({
+          role: "assistant",
+          content: content || null,
+          tool_calls: research ? [research] : toolCalls.length ? toolCalls : undefined,
+        })
+        if (content) setMessages((m) => [...m, { role: "assistant", content }])
+        setStreamText("")
 
-      const finish = toolCalls.find((c) => c.function.name === "finish_intake")
-      if (finish) {
-        let briefing = ""
-        try {
-          briefing = (JSON.parse(finish.function.arguments || "{}") as { briefing?: string }).briefing ?? ""
-        } catch {
-          briefing = ""
+        if (research) {
+          let args: Record<string, unknown> = {}
+          try {
+            args = JSON.parse(research.function.arguments || "{}") as Record<string, unknown>
+          } catch {
+            args = {}
+          }
+          const result = await runResearch(args, outline)
+          historyRef.current.push({
+            role: "tool",
+            tool_call_id: research.id,
+            name: research.function.name,
+            content: result.slice(0, 6000),
+          })
+          continue
         }
-        finalize(briefing || briefingFromHistory())
+
+        const finish = toolCalls.find((c) => c.function.name === "finish_intake")
+        if (finish) {
+          let briefing = ""
+          try {
+            briefing = (JSON.parse(finish.function.arguments || "{}") as { briefing?: string }).briefing ?? ""
+          } catch {
+            briefing = ""
+          }
+          const result = researchResultRef.current
+          finalize(
+            mode === "interview" && result && !(briefing || "").includes(result.slice(0, 80))
+              ? [briefing || briefingFromHistory(), "", "【公司与岗位研究】", result].filter(Boolean).join("\n")
+              : briefing || briefingFromHistory(),
+          )
+        }
+        break
       }
     } catch (err) {
       if ((err as Error)?.name !== "AbortError") {
@@ -211,6 +280,17 @@ export default function CareerIntakeDialog({
               <div key={i} className="flex justify-end">
                 <div className="agent-bubble agent-bubble-user">{m.content}</div>
               </div>
+            ) : m.role === "tool" ? (
+              <div key={i} className="tool-step" data-status={m.status || "running"}>
+                {m.status === "running" ? (
+                  <Icon icon="mdi:loading" className="agent-spin h-3.5 w-3.5" />
+                ) : m.status === "error" ? (
+                  <span className="tool-step-dot" style={{ background: "#ef4444" }} />
+                ) : (
+                  <span className="tool-step-dot" />
+                )}
+                <span>{m.content}</span>
+              </div>
             ) : (
               <div key={i} className="agent-bubble agent-bubble-assistant">
                 <Markdown content={m.content} />
@@ -251,7 +331,7 @@ export default function CareerIntakeDialog({
               <button
                 type="button"
                 className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
-                onClick={() => finalize(briefingFromHistory())}
+                onClick={enoughAction}
                 disabled={busy || briefingFromHistory().length === 0}
                 title="跳过追问，直接进入工作台"
               >

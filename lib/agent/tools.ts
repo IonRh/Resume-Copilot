@@ -17,7 +17,6 @@ import {
   genId,
   getDocTextAlign,
   reindexOrder,
-  textToDoc,
   withUpdatedElement,
   withUpdatedModule,
 } from "./changeset"
@@ -303,11 +302,46 @@ function draftToResumeData(draft: Args, base: ResumeData): ResumeData {
 }
 
 /** 执行单个工具，产出回传模型的文本结果，以及可选的变更/卡片 */
-export function executeTool(name: string, args: Args, data: ResumeData): ToolResult {
+export async function executeTool(name: string, args: Args, data: ResumeData): Promise<ToolResult> {
   switch (name) {
     /* ---------- 只读 ---------- */
     case "get_resume": {
       return { ok: true, message: buildResumeOutline(data) }
+    }
+
+    case "research_company_interview": {
+      const company = str(args.company)
+      const role = str(args.role)
+      const jd = str(args.jd)
+      if (!company && !role && !jd) return { ok: false, message: "缺少公司、岗位或 JD 信息，无法研究。" }
+      try {
+        const res = await fetch("/api/agent/research", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            company,
+            role,
+            jd,
+            resumeOutline: buildResumeOutline(data),
+          }),
+        })
+        const payload = (await res.json().catch(() => ({}))) as { research?: string; error?: string; detail?: string }
+        if (!res.ok) {
+          return {
+            ok: false,
+            message: payload.error || payload.detail || `公司研究失败（${res.status}）`,
+          }
+        }
+        return {
+          ok: true,
+          message: payload.research || "公司研究完成，但没有返回有效内容。",
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          message: `公司研究失败：${err instanceof Error ? err.message : String(err)}`,
+        }
+      }
     }
 
     /* ---------- 文本 ---------- */
@@ -723,6 +757,42 @@ export function executeTool(name: string, args: Args, data: ResumeData): ToolRes
         }),
       }
       return { ok: true, message: "已展示 JD 匹配卡片。", card }
+    }
+
+    case "plan_interview_questions": {
+      const questions = (Array.isArray(args.questions) ? args.questions : []).map((q, index) => {
+        const o = (q || {}) as Args
+        return [
+          `${index + 1}. ${str(o.question)}`,
+          str(o.kind) ? `类别：${str(o.kind)}` : "",
+          str(o.rationale) ? `内部理由：${str(o.rationale)}` : "",
+        ]
+          .filter(Boolean)
+          .join("；")
+      })
+      return {
+        ok: true,
+        message: [
+          "已记录本场模拟面试核心问题计划。不要一次性展示给用户；后续请按顺序调用 present_interview_question，每次只展示一道题。",
+          ...questions,
+        ].join("\n"),
+      }
+    }
+
+    case "present_interview_question": {
+      const card: AgentCard = {
+        type: "interview",
+        intro: str(args.intro) || undefined,
+        currentIndex: int(args.currentIndex) ?? 1,
+        total: int(args.total) ?? 1,
+        questions: [
+          {
+            question: str(args.question),
+            kind: str(args.kind) || undefined,
+          },
+        ],
+      }
+      return { ok: true, message: "已展示当前模拟面试题。", card }
     }
 
     case "present_interview_questions": {

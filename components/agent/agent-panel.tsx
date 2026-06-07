@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useResumeWorkspace } from "@/lib/agent/store"
+import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import type { AgentCard, AgentMode, AgentTurn } from "@/lib/agent/types"
@@ -39,16 +39,27 @@ const MODES: { key: AgentMode; label: string; icon: string }[] = [
   { key: "score", label: "评分诊断", icon: "mdi:chart-box-outline" },
 ]
 
-export default function AgentPanel({
-  asOverlay = false,
-  lockedMode,
-}: {
+export interface AgentPanelHandle {
+  send: (text: string, opts?: { displayText?: string }) => void
+}
+
+const AgentPanel = forwardRef<AgentPanelHandle, {
   asOverlay?: boolean
   /** 专注页（JD / 面试）：锁定单一 Agent，隐藏模式切换与收起按钮 */
   lockedMode?: AgentMode
-}) {
-  const ws = useResumeWorkspace()
-  const { send, retry, stop, running, error } = useAgent()
+  hideSessionControls?: boolean
+  workspace?: WorkspaceContextValue
+  onUserSubmit?: (text: string) => void
+}>(function AgentPanel({
+  asOverlay = false,
+  lockedMode,
+  hideSessionControls = false,
+  workspace,
+  onUserSubmit,
+}, ref) {
+  const contextWorkspace = useResumeWorkspace()
+  const ws = workspace ?? contextWorkspace
+  const { send, retry, stop, running, error } = useAgent(ws)
   const [input, setInput] = useState("")
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
@@ -127,6 +138,7 @@ export default function AgentPanel({
     if (!value || running) return
     setInput("")
     setMention((m) => ({ ...m, active: false }))
+    onUserSubmit?.(value)
     void send(value)
   }
 
@@ -164,62 +176,74 @@ export default function AgentPanel({
     setNewSessionOpen(false)
   }
 
+  useImperativeHandle(ref, () => ({
+    send: (text, opts) => {
+      void send(text, { displayText: opts?.displayText })
+    },
+  }), [send])
+
   return (
     <aside
       className={`rw-agent ${asOverlay ? "is-mobile-overlay" : ""} ${lockedMode ? "is-half" : ""}`}
     >
       <div className="agent-panel">
-        <div className="agent-session-bar">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5 bg-transparent text-xs">
-                <Icon icon="mdi:history" className="h-3.5 w-3.5" />
-                历史记录
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Agent 会话</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ws.sessions.map((session) => (
-                <DropdownMenuItem
-                  key={session.id}
-                  className="flex items-center justify-between gap-2"
-                  onClick={() => ws.switchSession(session.id)}
-                >
-                  <span className="min-w-0 truncate">{session.title}</span>
-                  {session.id === ws.activeSessionId ? (
-                    <Icon icon="mdi:check" className="h-3.5 w-3.5 text-primary" />
-                  ) : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {!hideSessionControls ? (
+          <div className="agent-session-bar">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 bg-transparent text-xs">
+                  <Icon icon="mdi:history" className="h-3.5 w-3.5" />
+                  历史记录
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Agent 会话</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {ws.sessions.map((session) => (
+                  <DropdownMenuItem
+                    key={session.id}
+                    className="flex items-center justify-between gap-2"
+                    onClick={() => ws.switchSession(session.id)}
+                  >
+                    <span className="min-w-0 truncate">{session.title}</span>
+                    {session.id === ws.activeSessionId ? (
+                      <Icon icon="mdi:check" className="h-3.5 w-3.5 text-primary" />
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5 bg-transparent text-xs"
-            onClick={() => {
-              setNewSessionMode("edit")
-              setNewSessionOpen(true)
-            }}
-          >
-            <Icon icon="mdi:plus" className="h-3.5 w-3.5" />
-            新建
-          </Button>
-
-          {!lockedMode ? (
             <Button
               size="sm"
-              variant="ghost"
-              className="ml-auto h-8 w-8 p-0"
-              onClick={() => ws.setAgentOpen(false)}
-              title="收起助手"
+              variant="outline"
+              className="h-8 gap-1.5 bg-transparent text-xs"
+              onClick={() => {
+                if (lockedMode) {
+                  ws.newSession(lockedMode)
+                } else {
+                  setNewSessionMode("edit")
+                  setNewSessionOpen(true)
+                }
+              }}
             >
-              <Icon icon="mdi:close" className="h-4 w-4" />
+              <Icon icon="mdi:plus" className="h-3.5 w-3.5" />
+              新建
             </Button>
-          ) : null}
-        </div>
+
+            {!lockedMode ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-8 w-8 p-0"
+                onClick={() => ws.setAgentOpen(false)}
+                title="收起助手"
+              >
+                <Icon icon="mdi:close" className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* 消息区 */}
         <div ref={messagesRef} className="agent-messages">
@@ -322,7 +346,7 @@ export default function AgentPanel({
                 detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
               }}
               onKeyDown={onKeyDown}
-              placeholder="描述你的需求，如「润色工作经历」（@ 引用模块）"
+              placeholder={lockedMode === "interview" ? "输入你的回答，面试官会继续追问" : "描述你的需求，如「润色工作经历」（@ 引用模块）"}
               rows={2}
               className="max-h-32 w-full resize-none bg-transparent text-sm outline-none"
             />
@@ -380,7 +404,9 @@ export default function AgentPanel({
       </Dialog>
     </aside>
   )
-}
+})
+
+export default AgentPanel
 
 function TurnView({
   turn,

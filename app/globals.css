@@ -520,7 +520,7 @@
   border-left: none;
 }
 
-/* 专注页（JD / 面试）：左简历 · 右助手，各占一半 */
+/* 专注页（JD）：左简历 · 右助手，各占一半 */
 .career-body {
   flex: 1;
   display: flex;
@@ -528,9 +528,70 @@
   min-height: 0;
 }
 
+/* 模拟面试：左分析建议 · 中简历 · 右纯面试官 */
+.career-body-interview .rw-agent {
+  width: clamp(320px, 23vw, 380px);
+  flex: 0 0 clamp(320px, 23vw, 380px);
+}
+
+.career-body-interview .rw-agent.is-half {
+  width: clamp(320px, 23vw, 380px);
+  flex: 0 0 clamp(320px, 23vw, 380px);
+}
+
+.career-body-interview .rw-agent:first-child {
+  width: clamp(300px, 20vw, 340px);
+  flex-basis: clamp(300px, 20vw, 340px);
+  border-left: none;
+  border-right: 1px solid var(--border);
+}
+
+.career-body-interview .rw-preview {
+  flex: 1 1 auto;
+  min-width: min(100%, 768px);
+  overflow-x: auto;
+}
+
+.career-body-interview .rw-preview > div {
+  min-width: 768px;
+  padding-inline: 1rem;
+}
+
+.career-body-interview .resume-preview {
+  transform-origin: top center;
+}
+
 .rw-agent.is-half {
   width: auto;
   flex: 1 1 0%;
+}
+
+@media (max-width: 1180px) {
+  .career-body-interview {
+    flex-direction: column;
+  }
+  .career-body-interview .rw-agent {
+    width: auto;
+    flex: 0 0 min(42vh, 360px);
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+  .career-body-interview .rw-agent.is-half {
+    width: auto;
+    flex: 0 0 min(42vh, 360px);
+  }
+  .career-body-interview .rw-agent:first-child {
+    border-right: none;
+    border-top: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .career-body-interview .rw-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .career-body-interview .rw-preview > div {
+    min-width: 0;
+  }
 }
 
 @media (max-width: 768px) {

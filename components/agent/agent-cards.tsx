@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { useResumeWorkspace } from "@/lib/agent/store"
@@ -289,15 +288,7 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
 }
 
 export function InterviewCard({ card }: { card: InterviewCardType }) {
-  const [revealed, setRevealed] = useState<Set<number>>(new Set())
-  const toggle = (i: number) =>
-    setRevealed((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
-      return next
-    })
-
+  const singleQuestion = card.questions.length === 1
   return (
     <div className="analysis-card">
       <div className="analysis-card-head">
@@ -305,30 +296,22 @@ export function InterviewCard({ card }: { card: InterviewCardType }) {
       </div>
       <div className="space-y-2 p-3">
         {card.intro ? <p className="text-xs text-muted-foreground">{card.intro}</p> : null}
+        {singleQuestion && card.currentIndex && card.total ? (
+          <div className="text-xs font-medium text-muted-foreground">
+            第 {card.currentIndex} / {card.total} 题
+          </div>
+        ) : null}
         <ol className="space-y-2">
           {card.questions.map((q, i) => (
             <li key={i} className="rounded-lg border border-border p-2">
               <div className="flex items-start gap-2">
                 <span className="brand-gradient-bg mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold">
-                  {i + 1}
+                  {singleQuestion ? card.currentIndex || 1 : i + 1}
                 </span>
                 <div className="flex-1">
                   <div className="text-sm">{q.question}</div>
                   {q.kind ? (
                     <span className="mt-1 inline-block kw-chip text-[10px]">{q.kind}</span>
-                  ) : null}
-                  {q.hint ? (
-                    <div className="mt-1">
-                      <button
-                        className="text-[11px] text-primary hover:underline"
-                        onClick={() => toggle(i)}
-                      >
-                        {revealed.has(i) ? "收起提示" : "查看作答提示"}
-                      </button>
-                      {revealed.has(i) ? (
-                        <p className="mt-1 text-xs text-muted-foreground">{q.hint}</p>
-                      ) : null}
-                    </div>
                   ) : null}
                 </div>
               </div>
@@ -336,7 +319,7 @@ export function InterviewCard({ card }: { card: InterviewCardType }) {
           ))}
         </ol>
         <p className="pt-1 text-[11px] text-muted-foreground">
-          在下方输入你的回答，我会逐题点评并追问。
+          在下方输入你的回答，面试官会继续追问。
         </p>
       </div>
     </div>

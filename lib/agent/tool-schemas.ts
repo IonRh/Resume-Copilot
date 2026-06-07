@@ -442,8 +442,70 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "research_company_interview",
+      description:
+        "模拟面试前的公司与岗位深度研究工具。根据公司、岗位/JD 和简历大纲联网收集公司业务、招聘方向、岗位能力要求、可能面试重点与可追问方向。仅用于研究，不修改简历。",
+      parameters: {
+        type: "object",
+        properties: {
+          company: { type: "string", description: "目标公司，如 腾讯、字节跳动" },
+          role: { type: "string", description: "目标岗位/方向，如 后端开发实习、AI 应用开发实习" },
+          jd: { type: "string", description: "用户提供的岗位描述或面试设定，可选但建议传入" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "plan_interview_questions",
+      description:
+        "内部规划工具：基于简历与目标岗位先设计并维护本场面试的核心问题清单。调用后不会把问题卡片展示给用户；仅用于让模型在后续逐题推进时参考。",
+      parameters: {
+        type: "object",
+        properties: {
+          questions: {
+            type: "array",
+            minItems: 3,
+            items: {
+              type: "object",
+              properties: {
+                question: { type: "string" },
+                kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
+                rationale: { type: "string", description: "内部理由：为什么这题适合该简历与目标岗位。不要展示给用户。" },
+              },
+              required: ["question"],
+            },
+          },
+        },
+        required: ["questions"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "present_interview_question",
+      description:
+        "展示当前这一道模拟面试问题卡片。每次只展示 1 道题；不要附带作答提示、评分标准、参考答案或点评。",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
+          currentIndex: { type: "integer", description: "当前是第几题，从 1 开始" },
+          total: { type: "integer", description: "本场计划题目总数" },
+          intro: { type: "string", description: "可选的一句简短过渡语，不要包含其他题目" },
+        },
+        required: ["question", "currentIndex", "total"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "present_interview_questions",
-      description: "基于简历（及可选 JD）展示模拟面试问题卡片。",
+      description: "兼容旧会话的面试题卡片工具。新模拟面试请使用 plan_interview_questions + present_interview_question。",
       parameters: {
         type: "object",
         properties: {
@@ -455,7 +517,6 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
               properties: {
                 question: { type: "string" },
                 kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
-                hint: { type: "string", description: "作答提示" },
               },
               required: ["question"],
             },
@@ -500,8 +561,67 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
 /** 仅这些工具不会产生需要审阅的变更 */
 export const READONLY_TOOLS = new Set([
   "get_resume",
+  "research_company_interview",
   "present_score_report",
   "present_jd_match",
+  "plan_interview_questions",
+  "present_interview_question",
   "present_interview_questions",
   "present_interview_report",
+])
+
+function pickTools(names: string[]): ToolSchema[] {
+  const allowed = new Set(names)
+  return TOOL_SCHEMAS.filter((tool) => allowed.has(tool.function.name))
+}
+
+export const EDIT_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "update_element_text",
+  "update_title",
+  "update_module",
+  "add_module",
+  "remove_module",
+  "reorder_modules",
+  "add_row",
+  "add_rows",
+  "remove_row",
+  "set_row_tags",
+  "set_personal_info",
+  "set_job_intention",
+  "set_layout",
+  "set_theme_color",
+  "replace_resume",
+])
+
+export const SCORE_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "present_score_report",
+])
+
+export const JD_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "present_jd_match",
+  "update_element_text",
+  "update_module",
+  "add_row",
+  "add_rows",
+  "remove_row",
+  "set_row_tags",
+  "reorder_modules",
+])
+
+export const INTERVIEWER_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "plan_interview_questions",
+  "present_interview_question",
+])
+
+export const INTERVIEW_ANALYSIS_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "present_interview_report",
+])
+
+export const INTERVIEW_INTAKE_TOOL_SCHEMAS = pickTools([
+  "research_company_interview",
 ])

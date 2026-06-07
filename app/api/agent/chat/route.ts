@@ -1,4 +1,4 @@
-import { TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
+import { EDIT_TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
 import type { ChatMessage } from "@/lib/agent/types"
 
 export const runtime = "nodejs"
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     payload.tools = body.tools
     payload.tool_choice = body.toolChoice ?? "auto"
   } else if (body.useTools !== false) {
-    payload.tools = TOOL_SCHEMAS
+    payload.tools = EDIT_TOOL_SCHEMAS
     payload.tool_choice = "auto"
   }
 

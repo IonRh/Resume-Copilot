@@ -107,6 +107,8 @@ export interface InterviewQuestion {
 export interface InterviewCard {
   type: "interview"
   intro?: string
+  currentIndex?: number
+  total?: number
   questions: InterviewQuestion[]
 }
 
@@ -177,7 +179,7 @@ export interface ChatMessage {
 }
 
 /** Agent 顶部模式 */
-export type AgentMode = "edit" | "score" | "jd" | "interview"
+export type AgentMode = "edit" | "score" | "jd" | "interview" | "interviewAnalysis"
 
 /** 工具执行结果 */
 export interface ToolResult {

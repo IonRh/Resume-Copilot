@@ -45,7 +45,7 @@ export default function ResumePreview({
     onSelect?.(selectedId === selection.id ? null : selection);
   };
   const AiFloat = ({ selection }: { selection: WorkspaceSelection }) =>
-    interactive && selectedId === selection.id ? (
+    interactive && onRequestAI && selectedId === selection.id ? (
       <button
         type="button"
         className="rp-ai-pop no-print brand-gradient-bg inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-md"
