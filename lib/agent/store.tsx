@@ -38,6 +38,7 @@ interface WorkspaceState {
   jd: string
   /** 由外部入口（如主页路口）注入的待自动发送指令 */
   kickoff: string | null
+  hydrated: boolean
   lastSource: "manual" | "agent" | "init" | null
   lastEditAt: number
 }
@@ -62,6 +63,7 @@ type Action =
   | { type: "NEW_SESSION"; mode?: AgentMode }
   | { type: "SWITCH_SESSION"; id: string }
   | { type: "SET_KICKOFF"; kickoff: string | null }
+  | { type: "SET_HYDRATED" }
   | { type: "HYDRATE"; sessions: AgentSession[]; activeSessionId: string; jd: string }
 
 const now = () => Date.now()
@@ -340,8 +342,11 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
     case "SET_KICKOFF":
       return { ...state, kickoff: action.kickoff }
 
+    case "SET_HYDRATED":
+      return { ...state, hydrated: true }
+
     case "HYDRATE":
-      return { ...state, sessions: action.sessions, activeSessionId: action.activeSessionId, jd: action.jd }
+      return { ...state, sessions: action.sessions, activeSessionId: action.activeSessionId, jd: action.jd, hydrated: true }
 
     default:
       return state
@@ -361,6 +366,7 @@ export interface WorkspaceContextValue {
   jd: string
   mode: AgentMode
   kickoff: string | null
+  hydrated: boolean
   canUndo: boolean
   canRedo: boolean
   /** 始终指向最新 resumeData 的引用（供异步 agent 循环读取） */
@@ -424,6 +430,7 @@ export function ResumeWorkspaceProvider({
     highlightedIds: [],
     jd: "",
     kickoff: null,
+    hydrated: false,
     lastSource: "init" as const,
     lastEditAt: 0,
   }))
@@ -439,7 +446,10 @@ export function ResumeWorkspaceProvider({
     if (typeof window === "undefined") return
     try {
       const raw = window.localStorage.getItem(storageKey)
-      if (!raw) return
+      if (!raw) {
+        dispatch({ type: "SET_HYDRATED" })
+        return
+      }
       const parsed = JSON.parse(raw) as PersistedAgentState
       const hydrated = hydrateAgentState(parsed)
       dispatch({
@@ -450,11 +460,12 @@ export function ResumeWorkspaceProvider({
       })
     } catch {
       /* ignore corrupt cache */
+      dispatch({ type: "SET_HYDRATED" })
     }
   }, [storageKey])
 
   useEffect(() => {
-    if (!hydratedRef.current || typeof window === "undefined") return
+    if (!state.hydrated || typeof window === "undefined") return
     const timer = window.setTimeout(() => {
       try {
         const sessions = state.sessions.map((session) => ({
@@ -468,6 +479,7 @@ export function ResumeWorkspaceProvider({
                 (t.changeIds && t.changeIds.length) ||
                 (t.cards && t.cards.length),
             )
+            .filter((t) => !t.streaming)
             .map((t) => ({
               id: t.id,
               role: t.role,
@@ -492,7 +504,7 @@ export function ResumeWorkspaceProvider({
       }
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [state.sessions, state.activeSessionId, state.jd, storageKey])
+  }, [state.sessions, state.activeSessionId, state.jd, state.hydrated, storageKey])
 
   const cb = {
     updateResume: useCallback((updates: Partial<ResumeData>) => dispatch({ type: "UPDATE_RESUME", updates }), []),
@@ -539,6 +551,7 @@ export function ResumeWorkspaceProvider({
       jd: state.jd,
       mode,
       kickoff: state.kickoff,
+      hydrated: state.hydrated,
       canUndo: state.past.length > 0,
       canRedo: state.future.length > 0,
       resumeRef,

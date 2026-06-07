@@ -48,6 +48,7 @@ export async function POST(req: Request) {
     messages: body.messages,
     stream: true,
     temperature: body.temperature ?? 0.4,
+    max_tokens: 1400,
   }
   if (Array.isArray(body.tools)) {
     payload.tools = body.tools
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
         authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
+      signal: req.signal,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

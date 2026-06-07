@@ -17,6 +17,9 @@ import type { AgentMode, ChatMessage, WorkspaceSelection } from "@/lib/agent/typ
 
 const MAX_ITERATIONS = 8
 const HISTORY_LIMIT = 24
+const STREAM_FLUSH_MS = 80
+const DEFAULT_MAX_STREAM_CHARS = 12000
+const ANALYSIS_MAX_STREAM_CHARS = 3500
 
 function toolsForMode(mode: AgentMode) {
   switch (mode) {
@@ -80,6 +83,36 @@ export function useAgent(workspace?: WorkspaceContextValue) {
 
       const controller = new AbortController()
       abortRef.current = controller
+      const maxStreamChars = ws.mode === "interviewAnalysis" ? ANALYSIS_MAX_STREAM_CHARS : DEFAULT_MAX_STREAM_CHARS
+      let streamedChars = 0
+      let stoppedByLimit = false
+      let pendingText = ""
+      let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+      const flushText = () => {
+        if (!pendingText) return
+        const text = pendingText
+        pendingText = ""
+        ws.appendAssistantText(assistantId, text)
+      }
+
+      const queueText = (text: string) => {
+        if (!text) return
+        pendingText += text
+        if (flushTimer) return
+        flushTimer = setTimeout(() => {
+          flushTimer = null
+          flushText()
+        }, STREAM_FLUSH_MS)
+      }
+
+      const finishStreamingText = () => {
+        if (flushTimer) {
+          clearTimeout(flushTimer)
+          flushTimer = null
+        }
+        flushText()
+      }
 
       try {
         let iteration = 0
@@ -96,9 +129,25 @@ export function useAgent(workspace?: WorkspaceContextValue) {
             streamOptions,
             controller.signal,
             (delta) => {
-              ws.appendAssistantText(assistantId, delta)
+              if (stoppedByLimit) return
+              const remaining = maxStreamChars - streamedChars
+              if (remaining <= 0) {
+                stoppedByLimit = true
+                queueText("\n\n（输出过长，已自动停止。）")
+                controller.abort()
+                return
+              }
+              const accepted = delta.length > remaining ? delta.slice(0, remaining) : delta
+              streamedChars += accepted.length
+              queueText(accepted)
+              if (delta.length > remaining || streamedChars >= maxStreamChars) {
+                stoppedByLimit = true
+                queueText("\n\n（输出过长，已自动停止。）")
+                controller.abort()
+              }
             },
           )
+          finishStreamingText()
 
           historyRef.current.push({
             role: "assistant",
@@ -159,10 +208,11 @@ export function useAgent(workspace?: WorkspaceContextValue) {
           }
         }
       } catch (err) {
+        finishStreamingText()
         if ((err as Error)?.name === "AbortError") {
           ws.updateTurn(assistantId, (t) => ({
             ...t,
-            content: t.content || "（已停止）",
+            content: t.content || (stoppedByLimit ? "（输出过长，已自动停止。）" : "（已停止）"),
           }))
         } else {
           const message = err instanceof Error ? err.message : String(err)
@@ -174,6 +224,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
           }))
         }
       } finally {
+        finishStreamingText()
         ws.updateTurn(assistantId, (t) => ({ ...t, streaming: false }))
         setRunning(false)
         abortRef.current = null
@@ -185,7 +236,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
   const send = useCallback(
     async (rawText: string, opts?: { selection?: WorkspaceSelection | null; displayText?: string }) => {
       const text = rawText.trim()
-      if (!text || running) return
+      if (!text || running) return false
 
       const selection = opts?.selection ?? ws.selection
       const visibleText = opts?.displayText?.trim() || text
@@ -205,6 +256,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
       historyRef.current.push({ role: "user", content: userContent })
 
       await runLoop(assistantId, selection)
+      return true
     },
     [running, ws, runLoop],
   )

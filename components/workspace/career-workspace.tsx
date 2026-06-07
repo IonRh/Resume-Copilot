@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -68,20 +68,15 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
   const interviewerStorageKey = `resume.career.${props.mode}.${storageScope}.interviewer`
 
   return (
-    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={analysisStorageKey}>
-      <InterviewWorkspaceWithAnalysis {...props} briefing={briefing} interviewerStorageKey={interviewerStorageKey} />
+    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={interviewerStorageKey}>
+      <CareerInner {...props} briefing={briefing} analysisStorageKey={analysisStorageKey} />
     </ResumeWorkspaceProvider>
   )
 }
 
-function InterviewWorkspaceWithAnalysis({
-  briefing,
-  interviewerStorageKey,
-  ...props
-}: CareerWorkspaceProps & {
+const InterviewAnalysisPanel = forwardRef<AgentPanelHandle, {
   briefing: string
-  interviewerStorageKey: string
-}) {
+}>(function InterviewAnalysisPanel({ briefing }, ref) {
   const analysisWs = useResumeWorkspace()
   const { setAgentOpen, setJd, setMode } = analysisWs
 
@@ -94,20 +89,16 @@ function InterviewWorkspaceWithAnalysis({
     if (briefing) setJd(briefing)
   }, [briefing, setJd])
 
-  return (
-    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={interviewerStorageKey}>
-      <CareerInner {...props} briefing={briefing} analysisWorkspace={analysisWs} />
-    </ResumeWorkspaceProvider>
-  )
-}
+  return <AgentPanel ref={ref} lockedMode="interviewAnalysis" hideSessionControls workspace={analysisWs} />
+})
 
 function CareerInner({
   mode,
   entryId,
   onBack,
   briefing,
-  analysisWorkspace,
-}: CareerWorkspaceProps & { briefing?: string; analysisWorkspace?: ReturnType<typeof useResumeWorkspace> }) {
+  analysisStorageKey,
+}: CareerWorkspaceProps & { briefing?: string; analysisStorageKey?: string }) {
   const ws = useResumeWorkspace()
   const profile = AGENT_PROFILES[mode]
   const briefingReadRef = useRef(false)
@@ -117,6 +108,10 @@ function CareerInner({
   const router = useRouter()
 
   const { resumeData } = ws
+  const kickoff = ws.kickoff
+  const hydrated = ws.hydrated
+  const turnCount = ws.turns.length
+  const setKickoff = ws.setKickoff
 
   // 另存为针对该岗位的定制版本（不覆盖原简历）
   const saveAsVariant = useCallback(() => {
@@ -136,13 +131,13 @@ function CareerInner({
     }
   }, [resumeData, toast, router])
 
-  // 读取 intake 阶段的简报，设置上下文并自动发起首条指令（仅一次）
+  // 读取 intake 阶段的简报，设置上下文（仅一次）
   useEffect(() => {
     if (briefingReadRef.current || typeof window === "undefined") return
     briefingReadRef.current = true
     ws.setMode(mode)
     ws.setAgentOpen(true)
-    if (analysisWorkspace) ws.clearSelection()
+    if (analysisStorageKey) ws.clearSelection()
     if (briefing) ws.setJd(briefing)
     else {
       try {
@@ -158,9 +153,15 @@ function CareerInner({
         /* ignore */
       }
     }
-    ws.setKickoff(profile.intake?.initialPrompt ?? "")
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
+  useEffect(() => {
+    if (!hydrated || turnCount > 0 || kickoff) return
+    const prompt = profile.intake?.initialPrompt
+    if (prompt) setKickoff(prompt)
+  }, [hydrated, kickoff, profile.intake?.initialPrompt, setKickoff, turnCount])
 
   // 接受 AI 优化后自动回写到该简历，避免丢失（跳过首挂载的空写）
   useEffect(() => {
@@ -207,7 +208,7 @@ function CareerInner({
 
   const onInterviewAnswer = useCallback(
     (answer: string) => {
-      if (!analysisWorkspace || mode !== "interview") return
+      if (!analysisStorageKey || mode !== "interview") return
       const question = latestInterviewQuestion()
       const prompt = [
         "请分析这一轮模拟面试回答。你是左侧分析建议 Agent，不是面试官；不要继续出正式面试题。",
@@ -222,7 +223,7 @@ function CareerInner({
       ].join("\n")
       analysisPanelRef.current?.send(prompt, { displayText: "模型查看了你的面试回答，正在分析这一轮表现。" })
     },
-    [analysisWorkspace, latestInterviewQuestion, mode],
+    [analysisStorageKey, latestInterviewQuestion, mode],
   )
 
   return (
@@ -271,28 +272,25 @@ function CareerInner({
         </div>
       </div>
 
-      <div className={`career-body ${analysisWorkspace ? "career-body-interview" : ""}`}>
-        {analysisWorkspace ? (
-          <AgentPanel
-            ref={analysisPanelRef}
-            lockedMode="interviewAnalysis"
-            hideSessionControls
-            workspace={analysisWorkspace}
-          />
+      <div className={`career-body ${analysisStorageKey ? "career-body-interview" : ""}`}>
+        {analysisStorageKey ? (
+          <ResumeWorkspaceProvider initialData={initialData} storageKey={analysisStorageKey}>
+            <InterviewAnalysisPanel ref={analysisPanelRef} briefing={briefing || ""} />
+          </ResumeWorkspaceProvider>
         ) : null}
         <div className="rw-preview">
           <div className="p-4">
             <ResumePreview
               resumeData={resumeData}
-              interactive={!analysisWorkspace}
-              selectedId={analysisWorkspace ? null : ws.selection?.id ?? null}
+              interactive={!analysisStorageKey}
+              selectedId={analysisStorageKey ? null : ws.selection?.id ?? null}
               highlightedIds={ws.highlightedIds}
-              onSelect={analysisWorkspace ? undefined : ws.setSelection}
-              onRequestAI={analysisWorkspace ? undefined : onRequestAI}
+              onSelect={analysisStorageKey ? undefined : ws.setSelection}
+              onRequestAI={analysisStorageKey ? undefined : onRequestAI}
             />
           </div>
         </div>
-        <AgentPanel lockedMode={mode} onUserSubmit={onInterviewAnswer} />
+        <AgentPanel lockedMode={mode} onUserTurnComplete={onInterviewAnswer} />
       </div>
     </div>
   )

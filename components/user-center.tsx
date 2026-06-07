@@ -221,59 +221,6 @@ export default function UserCenter() {
       {/* 统一隐藏文件输入，空态也可使用 */}
       <input id="uc-import-file" type="file" accept=".json" className="hidden" onChange={handleImport} />
 
-      {/* AI + 求职 品牌横幅 */}
-      <div className="p-4 pb-0">
-        <div className="ai-hero px-6 py-8 sm:px-10 sm:py-10">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-                <Icon icon="mdi:sparkles" className="h-3.5 w-3.5 text-primary" />
-                AI Native · 大学生求职全流程
-              </div>
-              <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">
-                <span className="brand-gradient-text">AI + 求职</span>
-                <span className="text-foreground"> 简历工作区</span>
-              </h1>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-                左侧手工编辑、中间实时预览，右上角呼出 AI Agent 即进入三分屏工作区。
-                Agent 可润色改写、调整结构与样式、对照 JD 优化、给出评分诊断与模拟面试，所有改动均以 diff 卡片确认后落地。
-              </p>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <Button onClick={handleCreate} className="brand-gradient-bg gap-2 border-0">
-                  <Icon icon="mdi:robot-happy-outline" className="h-4 w-4" /> AI 智能创建
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-2 bg-transparent"
-                  onClick={() => prefetchAndOpenNew("example")}
-                >
-                  <Icon icon="mdi:lightbulb-on-outline" className="h-4 w-4" /> 从示例开始
-                </Button>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-                {[
-                  { icon: "mdi:auto-fix", label: "逐句润色改写" },
-                  { icon: "mdi:file-tree", label: "结构智能重排" },
-                  { icon: "mdi:target", label: "JD 精准匹配" },
-                  { icon: "mdi:chart-box-outline", label: "简历评分诊断" },
-                  { icon: "mdi:account-voice", label: "模拟面试" },
-                ].map((f) => (
-                  <span key={f.label} className="inline-flex items-center gap-1.5">
-                    <Icon icon={f.icon} className="h-3.5 w-3.5 text-primary" />
-                    {f.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="hidden shrink-0 sm:block">
-              <div className="brand-gradient-bg grid h-28 w-28 place-items-center rounded-3xl shadow-lg shadow-primary/20">
-                <Icon icon="mdi:file-account-outline" className="h-14 w-14" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* AI 求职工具路口 */}
       <div className="p-4 pb-0">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -405,13 +352,6 @@ export default function UserCenter() {
                     onClick={() => prefetchAndOpenNew("example")}
                   >
                     <Icon icon="mdi:lightbulb-on" className="w-4 h-4" /> 示例
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="gap-2 shrink-0"
-                    onClick={() => window.open("https://github.com/wzdnzd/resume", "_blank", "noopener,noreferrer")}
-                  >
-                    <Icon icon="mdi:github" className="w-4 h-4" /> GitHub
                   </Button>
                 </div>
               </div>

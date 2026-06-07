@@ -72,7 +72,7 @@ function NewEditPageContent() {
         initialData={clonedData ?? prefetchedData}
         template={useExample ? "example" : "default"}
         entryId={undefined}
-        onBack={() => router.push("/")}
+        onBack={() => router.push("/resumes")}
         onSave={(d) => handleSave(d)}
       />
     </main>

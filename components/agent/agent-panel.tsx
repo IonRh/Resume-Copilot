@@ -50,12 +50,14 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   hideSessionControls?: boolean
   workspace?: WorkspaceContextValue
   onUserSubmit?: (text: string) => void
+  onUserTurnComplete?: (text: string) => void
 }>(function AgentPanel({
   asOverlay = false,
   lockedMode,
   hideSessionControls = false,
   workspace,
   onUserSubmit,
+  onUserTurnComplete,
 }, ref) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
@@ -139,7 +141,9 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     setInput("")
     setMention((m) => ({ ...m, active: false }))
     onUserSubmit?.(value)
-    void send(value)
+    void send(value).then((sent) => {
+      if (sent) onUserTurnComplete?.(value)
+    })
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -504,7 +508,7 @@ function TurnView({
 function AssistantText({ content, streaming }: { content: string; streaming: boolean }) {
   return (
     <div className="agent-bubble agent-bubble-assistant">
-      <Markdown content={content} />
+      {streaming ? <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div> : <Markdown content={content} />}
       {streaming ? <span className="ml-0.5 inline-block animate-pulse">▋</span> : null}
     </div>
   )

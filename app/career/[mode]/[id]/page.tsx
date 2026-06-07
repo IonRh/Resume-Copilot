@@ -29,7 +29,7 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
     return (
       <main className="min-h-screen bg-background p-6">
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="gap-2 bg-transparent" onClick={() => router.push("/")}>
+          <Button variant="outline" className="gap-2 bg-transparent" onClick={() => router.push("/resumes")}>
             <Icon icon="mdi:arrow-left" className="h-4 w-4" /> 返回
           </Button>
           <span className="text-sm text-destructive">
@@ -51,7 +51,7 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
         entryId={id}
         initialData={entry.resumeData}
         sessionId={searchParams.get("session") || undefined}
-        onBack={() => router.push("/")}
+        onBack={() => router.push("/resumes")}
       />
     </main>
   )

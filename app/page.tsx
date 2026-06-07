@@ -1,9 +1,5 @@
-import UserCenter from "@/components/user-center"
+import WelcomePage from "@/components/welcome-page"
 
 export default function Home() {
-  return (
-    <main className="min-h-screen bg-background">
-      <UserCenter />
-    </main>
-  )
+  return <WelcomePage />
 }
