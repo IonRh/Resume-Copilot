@@ -80,13 +80,19 @@ export interface ScoreCard {
   suggestions?: string[]
 }
 
+export type JdSuggestionStatus = "pending" | "applied" | "dismissed"
+
 export interface JdSuggestion {
+  /** 稳定 id，用于在常驻面板中跟踪「待处理 / 已应用」状态 */
+  id?: string
   section: string
   advice: string
   /** 一键应用时发送给 Agent 的指令 */
   prompt?: string
   /** 该建议涉及的简历元素 id（module/row/element），用于点击定位高亮 */
   targetIds?: string[]
+  /** 该建议在当前会话中的处理状态 */
+  status?: JdSuggestionStatus
 }
 
 export interface JdCard {
@@ -96,6 +102,16 @@ export interface JdCard {
   missingKeywords: string[]
   summary?: string
   suggestions: JdSuggestion[]
+}
+
+/** 工作区级别的 JD 匹配状态：贯穿整个会话的常驻匹配面板数据源 */
+export interface JdMatchState {
+  /** 最新一版匹配卡片 */
+  current: JdCard
+  /** 历次匹配度评分（用于展示分数变化 delta） */
+  history: { score: number; at: number }[]
+  /** 本会话内累计已应用的建议数 */
+  appliedCount: number
 }
 
 export interface InterviewQuestion {

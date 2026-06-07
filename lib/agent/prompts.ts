@@ -88,7 +88,12 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     tagline: "岗位匹配 · 关键词对齐",
     icon: "mdi:target",
     guide:
-      "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须先调用 get_resume 读取结构，再调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。每条建议尽量附带可执行 prompt，并在 targetIds 中填写该建议涉及的简历元素/行/模块纯 id（使用 get_resume 里 element#、row#、module# 后面的 id，不要带 element#/row#/module# 前缀），以便用户点击「定位」滚动高亮到对应位置。用户确认后再用 update_element_text 等工具落地修改。",
+      [
+        "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须先调用 get_resume 读取结构，再调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。",
+        "匹配卡片会作为右侧常驻面板贯穿整个会话，因此每条建议都必须同时提供 prompt（用户一键应用时发给你的具体指令）与 targetIds（该建议涉及的简历元素/行/模块纯 id，使用 get_resume 里 element#、row#、module# 后面的 id，不要带 element#/row#/module# 前缀），以便用户点击「定位」滚动高亮、点击「让 AI 应用」直接落地。",
+        "用户确认后再用 update_element_text 等工具落地修改。",
+        "当被要求「重新评估匹配度」时：只调用 present_jd_match，基于当前最新简历给出真实分数，不要顺带做其它修改，也不要输出多余文字。匹配度应如实反映简历改进——若已补齐缺失关键词或强化了相关经历，分数应相应提高。",
+      ].join("\n"),
     suggestions: ["对照 JD 分析匹配度", "把缺失关键词自然融入工作经历", "按该岗位重排我的项目顺序"],
     intake: {
       title: "JD 匹配优化",
@@ -193,6 +198,10 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     suggestions: ["分析我这题答得怎么样", "给这段回答打分并优化", "预测面试官会怎么追问"],
   },
 }
+
+/** JD 重新评分：简历被修改后静默触发，要求模型仅重出匹配卡片 */
+export const JD_RESCORE_INSTRUCTION =
+  "我的简历刚刚发生了改动。请先用 get_resume 读取最新结构，再只调用 present_jd_match，基于改动后的简历重新评估与目标岗位的匹配度（更新分数、已命中/缺失关键词与优化建议）。不要做任何修改，也不要输出额外文字。"
 
 /** finish_intake：intake 阶段唯一可用工具，由模型自主决定何时收尾 */
 export const INTAKE_TOOL = {

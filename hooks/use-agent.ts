@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { buildResumeOutline, genId } from "@/lib/agent/changeset"
 import { executeTool, READONLY_TOOLS } from "@/lib/agent/tools"
-import { buildSystemPrompt } from "@/lib/agent/prompts"
+import { buildSystemPrompt, JD_RESCORE_INSTRUCTION } from "@/lib/agent/prompts"
 import { streamChat } from "@/lib/agent/stream"
 import {
   EDIT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
   INTERVIEWER_TOOL_SCHEMAS,
+  JD_RESCORE_TOOL_SCHEMAS,
   JD_TOOL_SCHEMAS,
   SCORE_TOOL_SCHEMAS,
 } from "@/lib/agent/tool-schemas"
@@ -41,9 +42,14 @@ export function useAgent(workspace?: WorkspaceContextValue) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
   const [running, setRunning] = useState(false)
+  const [rescoring, setRescoring] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const historyRef = useRef<ChatMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
+  // 供异步回调读取的运行态镜像，避免闭包拿到过期值
+  const runningRef = useRef(false)
+  const rescoringRef = useRef(false)
+  const rescoreAbortRef = useRef<AbortController | null>(null)
 
   // 最近一次请求时的选中态，供「重试」复用
   const lastSelectionRef = useRef<WorkspaceSelection | null>(null)
@@ -60,6 +66,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
 
   const stop = useCallback(() => {
     abortRef.current?.abort()
+    runningRef.current = false
     setRunning(false)
   }, [])
 
@@ -67,6 +74,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
   const runLoop = useCallback(
     async (assistantId: string, selection: WorkspaceSelection | null) => {
       setError(null)
+      runningRef.current = true
       setRunning(true)
       ws.updateTurn(assistantId, (t) => ({ ...t, streaming: true, error: false }))
 
@@ -187,6 +195,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
             }
             if (result.card) {
               ws.addCard(assistantId, result.card)
+              if (result.card.type === "jd") ws.setJdMatch(result.card)
             }
             ws.patchStep(assistantId, stepId, {
               status: result.ok ? "done" : "error",
@@ -226,12 +235,88 @@ export function useAgent(workspace?: WorkspaceContextValue) {
       } finally {
         finishStreamingText()
         ws.updateTurn(assistantId, (t) => ({ ...t, streaming: false }))
+        runningRef.current = false
         setRunning(false)
         abortRef.current = null
       }
     },
     [ws],
   )
+
+  /**
+   * 静默重新评分：简历被修改后调用。仅读取最新简历并重出匹配卡片，
+   * 结果写入 ws.jdMatch（不污染聊天流），用于驱动常驻匹配面板的分数演进。
+   */
+  const rescore = useCallback(async () => {
+    if (ws.mode !== "jd") return
+    if (runningRef.current || rescoringRef.current) return
+    rescoringRef.current = true
+    setRescoring(true)
+    const controller = new AbortController()
+    rescoreAbortRef.current = controller
+    try {
+      const system: ChatMessage = {
+        role: "system",
+        content: buildSystemPrompt({
+          outline: buildResumeOutline(ws.resumeRef.current),
+          selection: null,
+          jd: ws.jd,
+          mode: "jd",
+          staged: ws.staged,
+        }),
+      }
+      const history: ChatMessage[] = [{ role: "user", content: JD_RESCORE_INSTRUCTION }]
+      let iteration = 0
+      while (iteration < 4) {
+        iteration += 1
+        if (controller.signal.aborted) break
+        const { content, toolCalls } = await streamChat(
+          [system, ...history],
+          { tools: JD_RESCORE_TOOL_SCHEMAS },
+          controller.signal,
+          () => {
+            /* 重新评分不向聊天流输出文本 */
+          },
+        )
+        history.push({
+          role: "assistant",
+          content: content || null,
+          tool_calls: toolCalls.length ? toolCalls : undefined,
+        })
+        if (toolCalls.length === 0) break
+
+        let gotCard = false
+        for (const call of toolCalls) {
+          if (controller.signal.aborted) break
+          let parsed: Record<string, unknown> = {}
+          try {
+            parsed = JSON.parse(call.function.arguments || "{}")
+          } catch {
+            parsed = {}
+          }
+          const result = await executeTool(call.function.name, parsed, ws.resumeRef.current)
+          if (result.card?.type === "jd") {
+            ws.setJdMatch(result.card)
+            gotCard = true
+          }
+          const isReadonly = READONLY_TOOLS.has(call.function.name)
+          history.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: result.message.slice(0, isReadonly ? 12000 : 1200),
+          })
+        }
+        if (gotCard) break
+      }
+    } catch {
+      /* 重新评分失败静默处理，不打断主流程 */
+    } finally {
+      rescoringRef.current = false
+      setRescoring(false)
+      rescoreAbortRef.current = null
+    }
+  }, [ws])
 
   const send = useCallback(
     async (rawText: string, opts?: { selection?: WorkspaceSelection | null; displayText?: string }) => {
@@ -276,7 +361,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
     await runLoop(assistantId, lastSelectionRef.current)
   }, [running, ws, runLoop])
 
-  return { send, retry, stop, running, error }
+  return { send, retry, stop, rescore, running, rescoring, error }
 }
 
 function stepLabel(tool: string): string {

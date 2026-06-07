@@ -18,10 +18,56 @@ import type {
   AgentTurn,
   AssistantTurnPart,
   ChangeSet,
+  JdCard,
+  JdMatchState,
+  JdSuggestionStatus,
   StagedChange,
   ToolStep,
   WorkspaceSelection,
 } from "./types"
+
+const JD_SCORE_HISTORY_LIMIT = 20
+
+/** 为 JD 建议生成稳定 id（基于 section + advice，便于跨版本跟踪状态） */
+function suggestionKey(section: string, advice: string): string {
+  const raw = `${section}::${advice}`
+  let hash = 0
+  for (let i = 0; i < raw.length; i++) {
+    hash = (hash * 31 + raw.charCodeAt(i)) | 0
+  }
+  return `sug-${(hash >>> 0).toString(36)}`
+}
+
+/**
+ * 合并新一版匹配卡片与上一版的建议状态：
+ * - 为缺失 id 的建议补 id
+ * - 沿用上一版相同建议（同 id）的 applied/dismissed 状态，避免重新评分后进度被清零
+ */
+function mergeJdMatch(prev: JdMatchState | null, card: JdCard): JdMatchState {
+  const prevStatusById = new Map<string, JdSuggestionStatus>()
+  prev?.current.suggestions.forEach((s) => {
+    if (s.id && s.status) prevStatusById.set(s.id, s.status)
+  })
+
+  const suggestions = card.suggestions.map((s) => {
+    const id = s.id || suggestionKey(s.section, s.advice)
+    // 用户已做出的决定（applied/dismissed）具有粘性，重新评分时不被新卡片的默认 pending 覆盖
+    const prevStatus = prevStatusById.get(id)
+    const status: JdSuggestionStatus =
+      prevStatus === "applied" || prevStatus === "dismissed" ? prevStatus : s.status || "pending"
+    return { ...s, id, status }
+  })
+
+  const at = now()
+  const history = [...(prev?.history || []), { score: card.matchScore, at }].slice(-JD_SCORE_HISTORY_LIMIT)
+  const appliedCount = suggestions.filter((s) => s.status === "applied").length
+
+  return {
+    current: { ...card, suggestions },
+    history,
+    appliedCount: Math.max(prev?.appliedCount || 0, appliedCount),
+  }
+}
 
 const HISTORY_LIMIT = 50
 const MANUAL_COALESCE_MS = 1000
@@ -36,6 +82,8 @@ interface WorkspaceState {
   sessions: AgentSession[]
   activeSessionId: string
   jd: string
+  /** 工作区级 JD 匹配状态（常驻匹配面板数据源），随会话切换 */
+  jdMatch: JdMatchState | null
   /** 由外部入口（如主页路口）注入的待自动发送指令 */
   kickoff: string | null
   hydrated: boolean
@@ -59,12 +107,20 @@ type Action =
   | { type: "ADD_TURN"; turn: AgentTurn }
   | { type: "UPDATE_TURN"; id: string; updater: (turn: AgentTurn) => AgentTurn }
   | { type: "SET_JD"; jd: string }
+  | { type: "SET_JD_MATCH"; card: JdCard }
+  | { type: "SET_SUGGESTION_STATUS"; suggestionId: string; status: JdSuggestionStatus }
   | { type: "SET_MODE"; mode: AgentMode }
   | { type: "NEW_SESSION"; mode?: AgentMode }
   | { type: "SWITCH_SESSION"; id: string }
   | { type: "SET_KICKOFF"; kickoff: string | null }
   | { type: "SET_HYDRATED" }
-  | { type: "HYDRATE"; sessions: AgentSession[]; activeSessionId: string; jd: string }
+  | {
+      type: "HYDRATE"
+      sessions: AgentSession[]
+      activeSessionId: string
+      jd: string
+      jdMatch: JdMatchState | null
+    }
 
 const now = () => Date.now()
 const stamp = (data: ResumeData): ResumeData => ({ ...data, updatedAt: new Date().toISOString() })
@@ -81,6 +137,7 @@ type PersistedAgentState = {
   turns?: AgentTurn[]
   staged?: PersistedStagedChange[]
   jd?: string
+  jdMatch?: JdMatchState | null
   mode?: AgentMode
 }
 
@@ -328,12 +385,35 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
     case "SET_JD":
       return { ...state, jd: action.jd }
 
+    case "SET_JD_MATCH":
+      return { ...state, jdMatch: mergeJdMatch(state.jdMatch, action.card) }
+
+    case "SET_SUGGESTION_STATUS": {
+      if (!state.jdMatch) return state
+      let changed = false
+      const suggestions = state.jdMatch.current.suggestions.map((s) => {
+        if (s.id !== action.suggestionId || s.status === action.status) return s
+        changed = true
+        return { ...s, status: action.status }
+      })
+      if (!changed) return state
+      const appliedCount = suggestions.filter((s) => s.status === "applied").length
+      return {
+        ...state,
+        jdMatch: {
+          ...state.jdMatch,
+          current: { ...state.jdMatch.current, suggestions },
+          appliedCount: Math.max(state.jdMatch.appliedCount, appliedCount),
+        },
+      }
+    }
+
     case "SET_MODE":
       return mapActiveSession(state, (session) => ({ ...session, mode: action.mode }))
 
     case "NEW_SESSION": {
       const session = createSession(action.mode || "edit")
-      return { ...state, sessions: [session, ...state.sessions], activeSessionId: session.id }
+      return { ...state, sessions: [session, ...state.sessions], activeSessionId: session.id, jdMatch: null }
     }
 
     case "SWITCH_SESSION":
@@ -346,7 +426,14 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, hydrated: true }
 
     case "HYDRATE":
-      return { ...state, sessions: action.sessions, activeSessionId: action.activeSessionId, jd: action.jd, hydrated: true }
+      return {
+        ...state,
+        sessions: action.sessions,
+        activeSessionId: action.activeSessionId,
+        jd: action.jd,
+        jdMatch: action.jdMatch,
+        hydrated: true,
+      }
 
     default:
       return state
@@ -364,6 +451,7 @@ export interface WorkspaceContextValue {
   activeSessionId: string
   turns: AgentTurn[]
   jd: string
+  jdMatch: JdMatchState | null
   mode: AgentMode
   kickoff: string | null
   hydrated: boolean
@@ -403,6 +491,8 @@ export interface WorkspaceContextValue {
   switchSession: (id: string) => void
 
   setJd: (jd: string) => void
+  setJdMatch: (card: JdCard) => void
+  setSuggestionStatus: (suggestionId: string, status: JdSuggestionStatus) => void
   setMode: (mode: AgentMode) => void
   setKickoff: (kickoff: string | null) => void
 }
@@ -429,6 +519,7 @@ export function ResumeWorkspaceProvider({
     activeSessionId: initialSession.id,
     highlightedIds: [],
     jd: "",
+    jdMatch: null,
     kickoff: null,
     hydrated: false,
     lastSource: "init" as const,
@@ -457,6 +548,7 @@ export function ResumeWorkspaceProvider({
         sessions: hydrated.sessions,
         activeSessionId: hydrated.activeSessionId,
         jd: parsed.jd || "",
+        jdMatch: parsed.jdMatch || null,
       })
     } catch {
       /* ignore corrupt cache */
@@ -497,14 +589,19 @@ export function ResumeWorkspaceProvider({
         }))
         window.localStorage.setItem(
           storageKey,
-          JSON.stringify({ sessions, activeSessionId: state.activeSessionId, jd: state.jd }),
+          JSON.stringify({
+            sessions,
+            activeSessionId: state.activeSessionId,
+            jd: state.jd,
+            jdMatch: state.jdMatch,
+          }),
         )
       } catch {
         /* quota / serialization errors are non-fatal */
       }
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [state.sessions, state.activeSessionId, state.jd, state.hydrated, storageKey])
+  }, [state.sessions, state.activeSessionId, state.jd, state.jdMatch, state.hydrated, storageKey])
 
   const cb = {
     updateResume: useCallback((updates: Partial<ResumeData>) => dispatch({ type: "UPDATE_RESUME", updates }), []),
@@ -526,6 +623,12 @@ export function ResumeWorkspaceProvider({
       [],
     ),
     setJd: useCallback((jd: string) => dispatch({ type: "SET_JD", jd }), []),
+    setJdMatch: useCallback((card: JdCard) => dispatch({ type: "SET_JD_MATCH", card }), []),
+    setSuggestionStatus: useCallback(
+      (suggestionId: string, status: JdSuggestionStatus) =>
+        dispatch({ type: "SET_SUGGESTION_STATUS", suggestionId, status }),
+      [],
+    ),
     setMode: useCallback((mode: AgentMode) => dispatch({ type: "SET_MODE", mode }), []),
     newSession: useCallback((mode?: AgentMode) => dispatch({ type: "NEW_SESSION", mode }), []),
     switchSession: useCallback((id: string) => dispatch({ type: "SWITCH_SESSION", id }), []),
@@ -549,6 +652,7 @@ export function ResumeWorkspaceProvider({
       highlightedIds: state.highlightedIds,
       turns,
       jd: state.jd,
+      jdMatch: state.jdMatch,
       mode,
       kickoff: state.kickoff,
       hydrated: state.hydrated,

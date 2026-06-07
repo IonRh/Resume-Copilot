@@ -28,6 +28,7 @@ import {
   InterviewCard,
   InterviewReportCard,
   JdCard,
+  JdMatchPanel,
   ScoreCard,
   ToolStepView,
 } from "./agent-cards"
@@ -61,7 +62,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
 }, ref) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
-  const { send, retry, stop, running, error } = useAgent(ws)
+  const { send, retry, stop, rescore, running, rescoring, error } = useAgent(ws)
   const [input, setInput] = useState("")
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
@@ -73,6 +74,8 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesRef = useRef<HTMLDivElement | null>(null)
   const kickoffSent = useRef(false)
+  const lastAcceptedRef = useRef<number | null>(null)
+  const rescoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 锁定模式（专注页）直接采用 lockedMode；编辑器内只在 edit / score 间切换，残留的 jd/interview 归一到 edit。
   const panelMode: AgentMode = lockedMode ?? (ws.mode === "score" ? "score" : "edit")
@@ -83,6 +86,34 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     if (lockedMode && ws.mode !== lockedMode) ws.setMode(lockedMode)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedMode])
+
+  // JD 模式：用户接受修改后，自动触发一次「重新评分」（防抖合并批量接受），让常驻面板分数实时演进。
+  const acceptedCount = ws.staged.filter((s) => s.status === "accepted").length
+  useEffect(() => {
+    if (panelMode !== "jd") return
+    // 首次（含刷新恢复历史）只记录基线，不触发评分
+    if (lastAcceptedRef.current === null) {
+      lastAcceptedRef.current = acceptedCount
+      return
+    }
+    if (acceptedCount <= lastAcceptedRef.current) {
+      lastAcceptedRef.current = acceptedCount
+      return
+    }
+    lastAcceptedRef.current = acceptedCount
+    // 尚无匹配卡片时（首轮卡片未出现）不打扰
+    if (!ws.jdMatch) return
+    if (rescoreTimerRef.current) clearTimeout(rescoreTimerRef.current)
+    rescoreTimerRef.current = setTimeout(() => {
+      rescoreTimerRef.current = null
+      void rescore()
+    }, 1500)
+  }, [acceptedCount, panelMode, ws.jdMatch, rescore])
+
+  // 卸载时清理待触发的重新评分定时器
+  useEffect(() => () => {
+    if (rescoreTimerRef.current) clearTimeout(rescoreTimerRef.current)
+  }, [])
 
   const modules = ws.resumeData.modules
   const mentionMatches = useMemo(() => {
@@ -247,6 +278,11 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               </Button>
             ) : null}
           </div>
+        ) : null}
+
+        {/* JD 常驻匹配面板：贯穿整个会话，分数/关键词/清单随修改演进 */}
+        {panelMode === "jd" && ws.jdMatch ? (
+          <JdMatchPanel onApply={(p) => submit(p)} onRescore={rescore} rescoring={rescoring} />
         ) : null}
 
         {/* 消息区 */}

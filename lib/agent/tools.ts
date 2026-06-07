@@ -36,6 +36,16 @@ const normalizeTargetId = (id: string): string => {
   return prefixed?.[1] || value.replace(/^(?:element|row|module)#/i, "")
 }
 
+/** 为 JD 建议生成稳定 id（基于 section + advice），与 store 中的算法一致，便于跨版本跟踪状态 */
+const suggestionKey = (section: string, advice: string): string => {
+  const raw = `${section}::${advice}`
+  let hash = 0
+  for (let i = 0; i < raw.length; i++) {
+    hash = (hash * 31 + raw.charCodeAt(i)) | 0
+  }
+  return `sug-${(hash >>> 0).toString(36)}`
+}
+
 interface RowSpec {
   type?: "rich" | "tags"
   columns?: number
@@ -754,11 +764,15 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
         summary: str(args.summary) || undefined,
         suggestions: (Array.isArray(args.suggestions) ? args.suggestions : []).map((s) => {
           const o = (s || {}) as Args
+          const section = str(o.section)
+          const advice = str(o.advice)
           return {
-            section: str(o.section),
-            advice: str(o.advice),
+            id: suggestionKey(section, advice),
+            section,
+            advice,
             prompt: str(o.prompt) || undefined,
             targetIds: Array.isArray(o.targetIds) ? o.targetIds.map(String).map(normalizeTargetId).filter(Boolean) : undefined,
+            status: "pending" as const,
           }
         }),
       }

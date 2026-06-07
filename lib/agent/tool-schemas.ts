@@ -602,6 +602,12 @@ export const SCORE_TOOL_SCHEMAS = pickTools([
   "present_score_report",
 ])
 
+/** JD 重新评分专用：仅读取简历并重出匹配卡片，不挂载任何修改类工具 */
+export const JD_RESCORE_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "present_jd_match",
+])
+
 export const JD_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_jd_match",

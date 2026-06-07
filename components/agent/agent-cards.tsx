@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { useResumeWorkspace } from "@/lib/agent/store"
@@ -9,6 +10,7 @@ import type {
   InterviewCard as InterviewCardType,
   InterviewReportCard as InterviewReportCardType,
   JdCard as JdCardType,
+  JdSuggestion,
   ScoreCard as ScoreCardType,
   ToolStep,
 } from "@/lib/agent/types"
@@ -300,7 +302,10 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
                       size="sm"
                       variant="outline"
                       className="h-6 gap-1 bg-transparent text-[11px]"
-                      onClick={() => onApply(s.prompt as string)}
+                      onClick={() => {
+                        onApply(s.prompt as string)
+                        if (s.id) ws.setSuggestionStatus(s.id, "applied")
+                      }}
                     >
                       <Icon icon="mdi:auto-fix" className="h-3 w-3" /> 让 AI 应用
                     </Button>
@@ -311,6 +316,227 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/**
+ * 常驻 JD 匹配面板：贯穿整个会话，展示最新匹配度（含分数变化）、关键词覆盖进度
+ * 以及可逐条落地、带完成状态的优化清单。数据源为 workspace 级 ws.jdMatch。
+ */
+export function JdMatchPanel({
+  onApply,
+  onRescore,
+  rescoring,
+}: {
+  onApply: (prompt: string) => void
+  onRescore?: () => void
+  rescoring?: boolean
+}) {
+  const ws = useResumeWorkspace()
+  const match = ws.jdMatch
+  const [collapsed, setCollapsed] = useState(false)
+  const [recentlyCovered, setRecentlyCovered] = useState<string[]>([])
+  const prevMatchedRef = useRef<Set<string> | null>(null)
+
+  // 检测「缺失 -> 已覆盖」的关键词，做一次性变绿过渡（刷新后 ref 重置，不误触发）
+  useEffect(() => {
+    if (!match) return
+    const currentSet = new Set(match.current.matchedKeywords)
+    const prev = prevMatchedRef.current
+    prevMatchedRef.current = currentSet
+    if (!prev) return
+    const newly = match.current.matchedKeywords.filter((k) => !prev.has(k))
+    if (!newly.length) return
+    setRecentlyCovered(newly)
+    const timer = setTimeout(() => setRecentlyCovered([]), 2600)
+    return () => clearTimeout(timer)
+  }, [match])
+
+  if (!match) return null
+
+  const card = match.current
+  const matched = card.matchedKeywords
+  const missing = card.missingKeywords
+  const totalKw = matched.length + missing.length
+  const coverage = totalKw ? Math.round((matched.length / totalKw) * 100) : 0
+
+  const history = match.history
+  const prevScore = history.length >= 2 ? history[history.length - 2].score : null
+  const delta = prevScore == null ? null : card.matchScore - prevScore
+
+  const activeSuggestions = card.suggestions.filter((s) => s.status !== "dismissed")
+  const totalSug = activeSuggestions.length
+  const doneSug = activeSuggestions.filter((s) => s.status === "applied").length
+
+  const locate = (ids: string[]) => {
+    const normalizedIds = normalizeTargetIds(ids)
+    if (!normalizedIds.length) return
+    ws.setHighlight([])
+    window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
+    locateInPreview(normalizedIds)
+  }
+
+  const apply = (s: JdSuggestion) => {
+    if (s.prompt) onApply(s.prompt)
+    if (s.id) ws.setSuggestionStatus(s.id, "applied")
+  }
+
+  const recentSet = new Set(recentlyCovered)
+
+  return (
+    <div className="jd-panel">
+      <div className="jd-panel-head">
+        <div className="flex items-center gap-1.5 text-sm font-semibold">
+          <Icon icon="mdi:target" className="h-4 w-4 text-primary" /> JD 匹配
+        </div>
+        <div className="flex items-center gap-1">
+          {onRescore ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 gap-1 px-1.5 text-[11px]"
+              onClick={onRescore}
+              disabled={rescoring}
+              title="基于当前简历重新评估匹配度"
+            >
+              <Icon
+                icon={rescoring ? "mdi:loading" : "mdi:refresh"}
+                className={`h-3.5 w-3.5 ${rescoring ? "agent-spin" : ""}`}
+              />
+              {rescoring ? "评分中" : "重新评分"}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "展开" : "收起"}
+          >
+            <Icon icon={collapsed ? "mdi:chevron-down" : "mdi:chevron-up"} className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="jd-panel-summary">
+        <div className="score-ring" style={{ ["--val" as string]: String(card.matchScore) }}>
+          {card.matchScore}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">匹配度</span>
+            {delta != null && delta !== 0 ? (
+              <span className={`jd-delta ${delta > 0 ? "is-up" : "is-down"}`}>
+                <Icon icon={delta > 0 ? "mdi:arrow-up" : "mdi:arrow-down"} className="h-3 w-3" />
+                {delta > 0 ? `+${delta}` : delta}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>关键词覆盖 {matched.length}/{totalKw}</span>
+            <span>{coverage}%</span>
+          </div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="brand-gradient-bg h-full rounded-full transition-all" style={{ width: `${coverage}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {!collapsed ? (
+        <>
+          {matched.length ? (
+            <div className="jd-panel-block">
+              <div className="jd-panel-label">已覆盖</div>
+              <div className="flex flex-wrap gap-1">
+                {matched.map((k) => (
+                  <span key={k} className="kw-chip" data-kind="matched" data-just={recentSet.has(k) ? "1" : undefined}>
+                    <Icon icon="mdi:check" className="h-3 w-3" />
+                    {k}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {missing.length ? (
+            <div className="jd-panel-block">
+              <div className="jd-panel-label">缺失/建议补充</div>
+              <div className="flex flex-wrap gap-1">
+                {missing.map((k) => (
+                  <span key={k} className="kw-chip" data-kind="missing">
+                    <Icon icon="mdi:plus" className="h-3 w-3" />
+                    {k}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {totalSug ? (
+            <div className="jd-panel-block">
+              <div className="jd-panel-label flex items-center justify-between">
+                <span>优化清单</span>
+                <span className="text-muted-foreground">已处理 {doneSug}/{totalSug}</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {activeSuggestions.map((s, i) => {
+                  const applied = s.status === "applied"
+                  return (
+                    <div key={s.id || i} className="jd-sug" data-status={s.status || "pending"}>
+                      <div className="flex items-start gap-1.5">
+                        <Icon
+                          icon={applied ? "mdi:check-circle" : "mdi:circle-outline"}
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                          style={{ color: applied ? "var(--brand-via)" : undefined }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium">{s.section}</div>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">{s.advice}</p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {s.targetIds?.length ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 gap-1 bg-transparent text-[11px]"
+                                onClick={() => locate(s.targetIds as string[])}
+                              >
+                                <Icon icon="mdi:crosshairs-gps" className="h-3 w-3" /> 定位
+                              </Button>
+                            ) : null}
+                            {s.prompt ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 gap-1 bg-transparent text-[11px]"
+                                onClick={() => apply(s)}
+                              >
+                                <Icon icon={applied ? "mdi:refresh" : "mdi:auto-fix"} className="h-3 w-3" />
+                                {applied ? "再次应用" : "让 AI 应用"}
+                              </Button>
+                            ) : null}
+                            {!applied && s.id ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+                                onClick={() => ws.setSuggestionStatus(s.id as string, "dismissed")}
+                                title="从清单中忽略"
+                              >
+                                <Icon icon="mdi:close" className="h-3 w-3" /> 忽略
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   )
 }

@@ -51,7 +51,13 @@ import {
   updateApplication as updateApplicationApi,
   type ApplicationDraft,
 } from "@/lib/applications"
-import { getAllResumes } from "@/lib/storage"
+import { getAllResumes, getResumeById } from "@/lib/storage"
+import {
+  fetchApplicationAssist,
+  fetchApplicationInsights,
+  type ApplicationAssistResult,
+  type ApplicationInsightsReport,
+} from "@/lib/application-ai"
 
 type ViewMode = "board" | "list"
 
@@ -154,6 +160,15 @@ export default function ApplicationTracker() {
 
   const [deleteTarget, setDeleteTarget] = useState<JobApplication | null>(null)
 
+  // AI 复盘
+  const [insightsOpen, setInsightsOpen] = useState(false)
+  const [insightsLoading, setInsightsLoading] = useState(false)
+  const [insights, setInsights] = useState<ApplicationInsightsReport | null>(null)
+
+  // AI 阶段助手（编辑弹窗内）
+  const [assistLoading, setAssistLoading] = useState(false)
+  const [assist, setAssist] = useState<ApplicationAssistResult | null>(null)
+
   const refresh = useCallback(() => {
     let cancelled = false
     setLoading(true)
@@ -218,11 +233,13 @@ export default function ApplicationTracker() {
   const openCreate = () => {
     setEditingId(null)
     setForm(emptyForm())
+    setAssist(null)
     setDialogOpen(true)
   }
 
   const openEdit = (item: JobApplication) => {
     setEditingId(item.id)
+    setAssist(null)
     setForm({
       company: item.company,
       position: item.position,
@@ -314,6 +331,41 @@ export default function ApplicationTracker() {
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
+
+  const openInsights = async () => {
+    setInsightsOpen(true)
+    if (insightsLoading) return
+    setInsightsLoading(true)
+    try {
+      const report = await fetchApplicationInsights(items)
+      setInsights(report)
+    } catch (e) {
+      toast({ title: "复盘失败", description: e instanceof Error ? e.message : "未知错误", variant: "destructive" })
+    } finally {
+      setInsightsLoading(false)
+    }
+  }
+
+  const runAssist = async () => {
+    if (!editingId) return
+    const application = items.find((i) => i.id === editingId)
+    if (!application) return
+    setAssistLoading(true)
+    try {
+      let resumeData = undefined
+      const resumeId = form.resumeId || application.resumeId
+      if (resumeId) {
+        const stored = await getResumeById(resumeId).catch(() => null)
+        resumeData = stored?.resumeData
+      }
+      const result = await fetchApplicationAssist({ ...application, ...buildDraft(), id: application.id } as JobApplication, resumeData)
+      setAssist(result)
+    } catch (e) {
+      toast({ title: "生成失败", description: e instanceof Error ? e.message : "未知错误", variant: "destructive" })
+    } finally {
+      setAssistLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -524,6 +576,21 @@ export default function ApplicationTracker() {
               <Textarea value={form.notes} onChange={(e) => setField("notes", e.target.value)} placeholder="面试感受、薪资谈判、待办事项…" className="min-h-16" />
             </Field>
 
+            {editingId ? (
+              <AssistPanel
+                loading={assistLoading}
+                result={assist}
+                onRun={runAssist}
+                onAdoptStep={(action) => setField("nextAction", action)}
+                onCopy={(text) => {
+                  navigator.clipboard?.writeText(text).then(
+                    () => toast({ title: "已复制", description: "跟进文案已复制到剪贴板" }),
+                    () => toast({ title: "复制失败", description: "请手动选择文本复制", variant: "destructive" }),
+                  )
+                }}
+              />
+            ) : null}
+
             {editingId ? <Timeline application={items.find((i) => i.id === editingId)} /> : null}
           </div>
 
@@ -536,6 +603,82 @@ export default function ApplicationTracker() {
               {editingId ? "保存修改" : "创建投递"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI 投递复盘 */}
+      <Dialog open={insightsOpen} onOpenChange={setInsightsOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon icon="mdi:chart-timeline-variant" className="h-5 w-5 text-primary" />
+              AI 投递复盘
+            </DialogTitle>
+            <DialogDescription>基于你目前的全部投递数据，给出阶段分布、客观洞察与下一步策略建议。</DialogDescription>
+          </DialogHeader>
+
+          <Funnel items={items} />
+
+          {insightsLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" /> AI 正在分析你的投递数据…
+            </div>
+          ) : insights ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-primary/5 p-3 text-sm">{insights.summary}</div>
+
+              {insights.observations.length > 0 ? (
+                <div>
+                  <div className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                    <Icon icon="mdi:eye-outline" className="h-4 w-4 text-muted-foreground" /> 数据洞察
+                  </div>
+                  <ul className="space-y-2">
+                    {insights.observations.map((item, i) => (
+                      <li key={i} className="rounded-md border p-2.5 text-sm">
+                        <div className="font-medium">{item.title}</div>
+                        <div className="mt-0.5 text-muted-foreground">{item.detail}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {insights.recommendations.length > 0 ? (
+                <div>
+                  <div className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                    <Icon icon="mdi:lightbulb-on-outline" className="h-4 w-4 text-amber-500" /> 策略建议
+                  </div>
+                  <ul className="space-y-2">
+                    {insights.recommendations.map((item, i) => (
+                      <li key={i} className="rounded-md border p-2.5 text-sm">
+                        <div className="flex items-center gap-2 font-medium">
+                          {item.priority ? <PriorityDot priority={item.priority} /> : null}
+                          {item.title}
+                        </div>
+                        <div className="mt-0.5 text-muted-foreground">{item.detail}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="text-right">
+                <Button variant="ghost" size="sm" className="gap-1.5" onClick={openInsights}>
+                  <Icon icon="mdi:refresh" className="h-3.5 w-3.5" /> 重新分析
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground">点击下方按钮，让 AI 复盘你的投递情况。</div>
+          )}
+
+          {!insightsLoading && !insights ? (
+            <DialogFooter>
+              <Button onClick={openInsights} className="gap-2">
+                <Icon icon="mdi:robot-happy-outline" className="h-4 w-4" /> 开始 AI 复盘
+              </Button>
+            </DialogFooter>
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -553,6 +696,18 @@ export default function ApplicationTracker() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 右下角 AI 复盘悬浮气泡 */}
+      {items.length > 0 ? (
+        <button
+          onClick={openInsights}
+          title="AI 投递复盘"
+          className="brand-gradient-bg fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-sm font-medium shadow-lg shadow-primary/25 transition-transform hover:-translate-y-0.5 hover:shadow-xl"
+        >
+          <Icon icon="mdi:chart-timeline-variant" className="h-5 w-5" />
+          AI 复盘
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -750,7 +905,7 @@ function BoardView({
       {APPLICATION_STATUS_FLOW.map((s) => {
         const list = grouped.get(s.value) ?? []
         return (
-          <div key={s.value} className="flex w-72 min-w-72 shrink-0 flex-col rounded-xl bg-muted/40">
+          <div key={s.value} className="flex min-h-[60vh] w-72 min-w-72 shrink-0 flex-col rounded-xl bg-muted/40">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />
@@ -758,9 +913,9 @@ function BoardView({
               </div>
               <Badge variant="secondary">{list.length}</Badge>
             </div>
-            <div className="flex flex-col gap-2 px-2 pb-3">
+            <div className="flex flex-1 flex-col gap-2 px-2 pb-3">
               {list.length === 0 ? (
-                <div className="rounded-lg border border-dashed py-6 text-center text-xs text-muted-foreground">暂无</div>
+                <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">暂无</div>
               ) : (
                 list.map((item) => (
                   <ApplicationCard
@@ -864,6 +1019,125 @@ function Timeline({ application }: { application?: JobApplication }) {
           </li>
         ))}
       </ol>
+    </div>
+  )
+}
+
+function PriorityDot({ priority }: { priority: "high" | "medium" | "low" }) {
+  const color = priority === "high" ? "bg-rose-500" : priority === "medium" ? "bg-amber-500" : "bg-slate-400"
+  const label = priority === "high" ? "高" : priority === "medium" ? "中" : "低"
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+      <span className={`h-2 w-2 rounded-full ${color}`} />
+      {label}
+    </span>
+  )
+}
+
+function Funnel({ items }: { items: JobApplication[] }) {
+  const counts = APPLICATION_STATUS_FLOW.map((s) => ({
+    meta: s,
+    count: items.filter((i) => i.status === s.value).length,
+  }))
+  const max = Math.max(1, ...counts.map((c) => c.count))
+  return (
+    <div className="space-y-1.5 rounded-lg border p-3">
+      {counts.map(({ meta, count }) => (
+        <div key={meta.value} className="flex items-center gap-2 text-xs">
+          <span className="w-16 shrink-0 text-muted-foreground">{meta.label}</span>
+          <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
+            <div className={`h-full ${meta.dot}`} style={{ width: `${(count / max) * 100}%` }} />
+          </div>
+          <span className="w-6 shrink-0 text-right tabular-nums">{count}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AssistPanel({
+  loading,
+  result,
+  onRun,
+  onAdoptStep,
+  onCopy,
+}: {
+  loading: boolean
+  result: ApplicationAssistResult | null
+  onRun: () => void
+  onAdoptStep: (action: string) => void
+  onCopy: (text: string) => void
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon icon="mdi:robot-happy-outline" className="h-4 w-4 text-primary" />
+          AI 阶段助手
+        </div>
+        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onRun} disabled={loading}>
+          <Icon icon={loading ? "mdi:loading" : "mdi:auto-fix"} className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          {result ? "重新生成" : "给我建议"}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-4 text-center text-xs text-muted-foreground">AI 正在结合当前阶段与简历给出建议…</div>
+      ) : result ? (
+        <div className="mt-3 space-y-3 text-sm">
+          <div className="text-muted-foreground">{result.summary}</div>
+
+          {result.nextSteps.length > 0 ? (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-muted-foreground">建议的下一步</div>
+              {result.nextSteps.map((step, i) => (
+                <div key={i} className="flex items-start justify-between gap-2 rounded-md border bg-background p-2">
+                  <div className="min-w-0">
+                    <div className="font-medium">{step.action}</div>
+                    {step.reason ? <div className="mt-0.5 text-xs text-muted-foreground">{step.reason}</div> : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 shrink-0 gap-1 px-2 text-xs"
+                    onClick={() => onAdoptStep(step.action)}
+                    title="填入“下一步动作”"
+                  >
+                    <Icon icon="mdi:check" className="h-3.5 w-3.5" /> 采纳
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {result.followUpMessage ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">可复制的跟进消息</span>
+                <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={() => onCopy(result.followUpMessage)}>
+                  <Icon icon="mdi:content-copy" className="h-3.5 w-3.5" /> 复制
+                </Button>
+              </div>
+              <div className="whitespace-pre-wrap rounded-md border bg-background p-2 text-xs leading-relaxed">{result.followUpMessage}</div>
+            </div>
+          ) : null}
+
+          {result.interviewTopics.length > 0 ? (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-muted-foreground">可能被深挖的面试主题</div>
+              <div className="flex flex-wrap gap-1.5">
+                {result.interviewTopics.map((topic, i) => (
+                  <span key={i} className="rounded-full border bg-background px-2 py-0.5 text-xs">{topic}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="py-3 text-center text-xs text-muted-foreground">
+          根据「当前阶段 + 关联简历 + JD」生成下一步行动、跟进文案与面试准备。
+        </div>
+      )}
     </div>
   )
 }
