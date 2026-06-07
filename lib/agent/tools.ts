@@ -779,6 +779,24 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
       return { ok: true, message: "已展示 JD 匹配卡片。", card }
     }
 
+    case "present_career_directions": {
+      const card: AgentCard = {
+        type: "discover",
+        summary: str(args.summary) || undefined,
+        directions: (Array.isArray(args.directions) ? args.directions : []).map((d) => {
+          const o = (d || {}) as Args
+          return {
+            title: str(o.title),
+            matchScore: int(o.matchScore) ?? 0,
+            reason: str(o.reason) || undefined,
+            positions: Array.isArray(o.positions) ? o.positions.map(String) : undefined,
+            gaps: Array.isArray(o.gaps) ? o.gaps.map(String) : undefined,
+          }
+        }),
+      }
+      return { ok: true, message: "已展示岗位方向推荐卡片。", card }
+    }
+
     case "plan_interview_questions": {
       const questions = (Array.isArray(args.questions) ? args.questions : []).map((q, index) => {
         const o = (q || {}) as Args

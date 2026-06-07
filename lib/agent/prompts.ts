@@ -37,6 +37,8 @@ export interface AgentProfile {
   guide: string
   /** 空态推荐 prompt */
   suggestions: string[]
+  /** 进入专注页后自动发起的首条指令（无需 intake 的专注模式使用，如岗位方向推荐） */
+  initialPrompt?: string
   /** 仅 JD / 面试：需要先经过 intake 模态框收集信息 */
   intake?: AgentIntakeConfig
 }
@@ -151,6 +153,25 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "保持事实真实，只强化表达与结构；不要修改与成果无关的样式或布局。",
       ].join("\n"),
     suggestions: ["把我的工作经历改写成 STAR 结构", "帮经历补充量化成果", "让项目经验更突出数字"],
+  },
+
+  discover: {
+    mode: "discover",
+    name: "岗位方向推荐",
+    tagline: "简历反推 · 方向探索",
+    icon: "mdi:compass-outline",
+    guide:
+      [
+        "当前为「岗位方向推荐」模式：你是资深职业规划顾问，专门基于用户简历反推 TA 适合投递的求职方向，解决「不知道投什么岗位、规划无方向」的困惑。",
+        "首轮必须先调用 get_resume 读取简历结构（教育背景、专业、技能、项目与经历），再调用 present_career_directions 输出 3-5 个推荐方向卡片。",
+        "每个方向需包含：方向名、匹配度评分（0-100，反映简历与该方向的契合程度）、推荐理由（具体指出命中了简历中的哪些专业 / 技能 / 项目 / 经历）、该方向的典型岗位（2-4 个）、以及当前简历相对该方向的能力缺口（要补强什么才更有竞争力）。",
+        "推荐应务实、贴合在校生 / 应届生的真实就业市场，按匹配度从高到低排序；不要编造简历中不存在的经历，每条推荐理由都必须能在简历中找到依据。",
+        "调用 present_career_directions 之后，只用 1-2 句话点出最值得优先尝试的方向与原因即可，不要逐条复述卡片里已有的内容。",
+        "本模式只读简历、不修改简历，绝不调用任何修改类（add/remove/update/set/replace）工具。",
+      ].join("\n"),
+    suggestions: ["我适合投哪些求职方向？", "基于我的简历推荐岗位", "我离心仪方向还差什么"],
+    initialPrompt:
+      "请基于我的简历分析我适合投递哪些求职方向：先调用 get_resume 读取我的专业、技能与经历，再调用 present_career_directions 给出 3-5 个推荐方向（含匹配度、推荐理由、典型岗位与能力缺口），并按匹配度从高到低排序。",
   },
 
   jd: {

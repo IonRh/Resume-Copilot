@@ -4,6 +4,40 @@ import type { ResumeData, StoredResume } from "@/types/resume"
 import { LOCAL_STORAGE_KEY } from "@/types/resume"
 
 const EDIT_PREFETCH_PREFIX = "resume.edit.prefetch."
+const RESUME_LIST_CACHE_KEY = "resume.list.cache.v1"
+
+// 进程内缓存：同一次会话内立即拿到上次结果，避免每次都白屏等网络
+let resumeListCache: StoredResume[] | null = null
+
+function readSessionCache(): StoredResume[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.sessionStorage.getItem(RESUME_LIST_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredResume[]
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeResumeListCache(list: StoredResume[]): void {
+  resumeListCache = list
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(RESUME_LIST_CACHE_KEY, JSON.stringify(list))
+  } catch {
+    /* 配额不足或不可用时忽略，仅丢失加速缓存 */
+  }
+}
+
+// 同步读取已缓存的简历列表，供首屏立即渲染（stale-while-revalidate）
+export function getCachedResumes(): StoredResume[] | null {
+  if (resumeListCache) return resumeListCache
+  const fromSession = readSessionCache()
+  if (fromSession) resumeListCache = fromSession
+  return fromSession
+}
 
 export type StorageErrorCode =
   | "UNAVAILABLE"
@@ -81,9 +115,14 @@ async function migrateLegacyLocalResumes(): Promise<StoredResume[]> {
 
 export async function getAllResumes(): Promise<StoredResume[]> {
   const payload = await request<{ resumes: StoredResume[] }>("/api/resumes")
-  if (payload.resumes.length > 0) return payload.resumes
+  if (payload.resumes.length > 0) {
+    writeResumeListCache(payload.resumes)
+    return payload.resumes
+  }
   const migrated = await migrateLegacyLocalResumes()
-  return migrated.length > 0 ? migrated : payload.resumes
+  const result = migrated.length > 0 ? migrated : payload.resumes
+  writeResumeListCache(result)
+  return result
 }
 
 export async function getResumeById(id: string): Promise<StoredResume | null> {

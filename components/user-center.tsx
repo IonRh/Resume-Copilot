@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { createEntryFromData, deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
+import { createEntryFromData, deleteResumes, getAllResumes, getCachedResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
 import { createDefaultResumeData } from "@/lib/utils"
 import {
   getResumeParentId,
@@ -228,18 +228,23 @@ export default function UserCenter() {
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  // 默认进入加载态；真正挂载后若已有缓存，则立即展示并在后台刷新
   const [loading, setLoading] = useState(true)
+  const [hydrated, setHydrated] = useState(false)
   const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview" }>({
     open: false,
     mode: "jd",
   })
   const [polishDialogOpen, setPolishDialogOpen] = useState(false)
   const [polishResumeId, setPolishResumeId] = useState<string | undefined>(undefined)
+  const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
+  const [discoverResumeId, setDiscoverResumeId] = useState<string | undefined>(undefined)
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(() => {
     let cancelled = false
-    setLoading(true)
+    // 已有数据（来自缓存或上次结果）时，后台静默刷新，不再清屏显示加载占位
+    setLoading((prev) => (items.length === 0 ? true : prev))
     void getAllResumes()
       .then((list) => {
         if (!cancelled) setItems(list)
@@ -255,11 +260,24 @@ export default function UserCenter() {
     return () => {
       cancelled = true
     }
-  }, [toast])
+  }, [items.length, toast])
+
+  // 客户端挂载后先用缓存即时渲染，避免回到首页时白屏等待
+  useEffect(() => {
+    const cached = getCachedResumes()
+    if (cached && cached.length > 0) {
+      setItems(cached)
+      setLoading(false)
+    }
+    setHydrated(true)
+  }, [])
 
   useEffect(() => {
+    if (!hydrated) return
     return refresh()
-  }, [refresh])
+    // 仅在水合完成后触发一次后台刷新；refresh 自身依赖 items.length 但这里不需要随之重跑
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated])
 
   // 轻量预取新建/示例模板，提升后续进入编辑页的首屏速度
   useEffect(() => {
@@ -443,6 +461,26 @@ export default function UserCenter() {
     [mostRecent?.id, polishResumeId, router, toast],
   )
 
+  // 岗位方向推荐：先选简历，再进入专注工作台，由 AI 反推适合的方向
+  const openDiscoverDialog = useCallback(() => {
+    if (!mostRecent) {
+      toast({ title: "还没有简历", description: "请先创建一份简历，再使用岗位方向推荐。" })
+      return
+    }
+    setDiscoverResumeId(mostRecent.id)
+    setDiscoverDialogOpen(true)
+  }, [mostRecent, toast])
+
+  const startDiscover = useCallback(() => {
+    const id = discoverResumeId || mostRecent?.id
+    if (!id) {
+      toast({ title: "请选择简历", description: "选择一份简历后再进入方向推荐。" })
+      return
+    }
+    setDiscoverDialogOpen(false)
+    router.push(`/career/discover/${id}`)
+  }, [discoverResumeId, mostRecent?.id, router, toast])
+
   // JD 匹配 / 模拟面试：先经「选简历 + 对话收集」模态框，再进入专注工作台
   const openIntake = useCallback(
     (mode: "jd" | "interview") => {
@@ -472,8 +510,14 @@ export default function UserCenter() {
     <div className="min-h-screen bg-background">
       {/* AI 求职工具路口 */}
       <div className="p-4 pb-0">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
+            {
+              icon: "mdi:compass-outline",
+              title: "岗位方向推荐",
+              desc: "基于简历反推你适合投递的方向",
+              action: openDiscoverDialog,
+            },
             {
               icon: "mdi:auto-fix",
               title: "AI 简历润色",
@@ -890,6 +934,65 @@ export default function UserCenter() {
               </Button>
               <Button type="submit" className="brand-gradient-bg border-0" disabled={!polishResumeId}>
                 <Icon icon="mdi:auto-fix" className="h-4 w-4" /> 进入润色
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 岗位方向推荐：先选择简历 */}
+      <Dialog open={discoverDialogOpen} onOpenChange={setDiscoverDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              startDiscover()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>选择要分析的简历</DialogTitle>
+              <DialogDescription>进入工作台后，AI 会基于这份简历反推适合你投递的岗位方向。</DialogDescription>
+            </DialogHeader>
+
+            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {resumeChoices.map((it) => {
+                const active = discoverResumeId === it.id
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                      active
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/40"
+                    }`}
+                    onClick={() => setDiscoverResumeId(it.id)}
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
+                      <Icon icon="mdi:file-document-edit-outline" className="h-4 w-4 text-primary" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{it.resumeData.title || "未命名"}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        更新于 {new Date(it.updatedAt).toLocaleString()}
+                      </span>
+                    </span>
+                    <Icon
+                      icon={active ? "mdi:radiobox-marked" : "mdi:radiobox-blank"}
+                      className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDiscoverDialogOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" className="brand-gradient-bg border-0" disabled={!discoverResumeId}>
+                <Icon icon="mdi:compass-outline" className="h-4 w-4" /> 开始推荐
               </Button>
             </DialogFooter>
           </form>

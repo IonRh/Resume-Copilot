@@ -1,12 +1,16 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { useResumeWorkspace } from "@/lib/agent/store"
 import { diffWords } from "@/lib/agent/word-diff"
+import { CAREER_BRIEFING_KEY } from "./career-intake-dialog"
 import type {
+  CareerDirection,
   ChangeKind,
+  DiscoverCard as DiscoverCardType,
   InterviewCard as InterviewCardType,
   InterviewReportCard as InterviewReportCardType,
   JdCard as JdCardType,
@@ -224,6 +228,122 @@ export function ScoreCard({ card }: { card: ScoreCardType }) {
             </ul>
           </div>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+function buildDirectionBriefing(d: CareerDirection): string {
+  return [
+    `目标方向：${d.title}`,
+    d.positions?.length ? `参考岗位：${d.positions.join("、")}` : "",
+    d.gaps?.length ? `需要补强：${d.gaps.join("；")}` : "",
+    "",
+    "以上方向来自「岗位方向推荐」。请据此对齐我的简历：分析与该方向的匹配度，并给出可直接落地的优化建议。",
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+export function DiscoverCard({ card }: { card: DiscoverCardType }) {
+  const router = useRouter()
+  const params = useParams()
+  const rawId = params?.id
+  const resumeId = typeof rawId === "string" ? rawId : Array.isArray(rawId) ? rawId[0] : ""
+
+  // 按该方向做 JD 匹配：复用 JD 专注页的 briefing 交接（与 JD intake 出口一致）
+  const goJdMatch = (d: CareerDirection) => {
+    if (!resumeId) return
+    try {
+      sessionStorage.setItem(
+        CAREER_BRIEFING_KEY,
+        JSON.stringify({ mode: "jd", resumeId, briefing: buildDirectionBriefing(d) }),
+      )
+    } catch {
+      /* sessionStorage 不可用时仍正常进入 JD 工作台 */
+    }
+    router.push(`/career/jd/${resumeId}`)
+  }
+
+  // 生成该方向子简历：复用克隆 + JD 子版本流程
+  const goVariant = () => {
+    if (!resumeId) return
+    router.push(`/edit/new?clone=${encodeURIComponent(resumeId)}&variant=jd`)
+  }
+
+  return (
+    <div className="analysis-card">
+      <div className="analysis-card-head">
+        <Icon icon="mdi:compass-outline" className="h-4 w-4" /> 岗位方向推荐
+      </div>
+      <div className="space-y-3 p-3">
+        {card.summary ? <p className="text-xs text-muted-foreground">{card.summary}</p> : null}
+        <div className="space-y-2">
+          {card.directions.map((d, i) => (
+            <div key={i} className="rounded-lg border border-border p-2.5">
+              <div className="flex items-center gap-2">
+                <span className="brand-gradient-bg grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold">
+                  {i + 1}
+                </span>
+                <span className="flex-1 text-sm font-semibold">{d.title}</span>
+                <span className="kw-chip shrink-0 text-[10px]" data-kind="matched">
+                  匹配 {d.matchScore}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="brand-gradient-bg h-full rounded-full"
+                  style={{ width: `${Math.max(0, Math.min(100, d.matchScore))}%` }}
+                />
+              </div>
+              {d.reason ? <p className="mt-1.5 text-xs text-muted-foreground">{d.reason}</p> : null}
+              {d.positions?.length ? (
+                <div className="mt-1.5">
+                  <div className="mb-1 text-[11px] font-semibold">典型岗位</div>
+                  <div className="flex flex-wrap gap-1">
+                    {d.positions.map((p, j) => (
+                      <span key={j} className="kw-chip text-[10px]">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {d.gaps?.length ? (
+                <div className="mt-1.5">
+                  <div className="mb-1 text-[11px] font-semibold">待补强</div>
+                  <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+                    {d.gaps.map((g, j) => (
+                      <li key={j}>{g}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {resumeId ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 bg-transparent text-[11px]"
+                    onClick={() => goJdMatch(d)}
+                    title="带着这个方向进入 JD 匹配工作台"
+                  >
+                    <Icon icon="mdi:target" className="h-3.5 w-3.5" /> 按此方向做 JD 匹配
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 bg-transparent text-[11px]"
+                    onClick={goVariant}
+                    title="基于当前简历生成一份针对该方向的子简历"
+                  >
+                    <Icon icon="mdi:file-tree" className="h-3.5 w-3.5" /> 生成该方向子简历
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

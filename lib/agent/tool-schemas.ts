@@ -445,6 +445,44 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "present_career_directions",
+      description:
+        "展示基于简历反推的岗位方向推荐卡片。给出 3-5 个适合用户投递的求职方向，按匹配度从高到低排序。仅用于展示，不修改简历。",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "一句话总览，如最值得优先尝试的方向" },
+          directions: {
+            type: "array",
+            minItems: 3,
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", description: "方向名，如 后端开发、数据分析、产品经理" },
+                matchScore: { type: "integer", description: "与简历的匹配度 0-100" },
+                reason: { type: "string", description: "推荐理由：命中了简历中的哪些专业/技能/项目/经历" },
+                positions: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "该方向的典型岗位（2-4 个）",
+                },
+                gaps: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "当前简历相对该方向的能力缺口/需补强项",
+                },
+              },
+              required: ["title", "matchScore"],
+            },
+          },
+        },
+        required: ["directions"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "research_company_interview",
       description:
         "模拟面试前的公司与岗位深度研究工具。根据公司、岗位/JD 和简历大纲联网收集公司业务、招聘方向、岗位能力要求、可能面试重点与可追问方向。仅用于研究，不修改简历。",
@@ -567,6 +605,7 @@ export const READONLY_TOOLS = new Set([
   "research_company_interview",
   "present_score_report",
   "present_jd_match",
+  "present_career_directions",
   "plan_interview_questions",
   "present_interview_question",
   "present_interview_questions",
@@ -620,6 +659,12 @@ export const BUILD_TOOL_SCHEMAS = pickTools([
 export const SCORE_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_score_report",
+])
+
+/** 岗位方向推荐：只读简历并展示推荐卡片，不挂载任何修改类工具 */
+export const DISCOVER_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "present_career_directions",
 ])
 
 /** 校对纠错：只改文本，不动结构/样式 */

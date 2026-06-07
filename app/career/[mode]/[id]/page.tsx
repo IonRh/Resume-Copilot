@@ -8,8 +8,8 @@ import type { StoredResume } from "@/types/resume"
 import { getResumeById } from "@/lib/storage"
 import CareerWorkspace from "@/components/workspace/career-workspace"
 
-type CareerMode = "jd" | "interview"
-const VALID_MODES: CareerMode[] = ["jd", "interview"]
+type CareerMode = "jd" | "interview" | "discover"
+const VALID_MODES: CareerMode[] = ["jd", "interview", "discover"]
 
 export default function CareerPage({ params }: { params: Promise<{ mode: string; id: string }> }) {
   const { mode, id } = use(params)

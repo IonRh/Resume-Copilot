@@ -28,7 +28,7 @@ import ExportButton from "@/components/export-button"
 import AgentPanel, { type AgentPanelHandle } from "@/components/agent/agent-panel"
 import type { AgentCard, WorkspaceSelection } from "@/lib/agent/types"
 
-type CareerMode = "jd" | "interview"
+type CareerMode = "jd" | "interview" | "discover"
 
 interface CareerWorkspaceProps {
   mode: CareerMode
@@ -180,7 +180,7 @@ function CareerInner({
     briefingReadRef.current = true
     ws.setMode(mode)
     ws.setAgentOpen(true)
-    if (analysisStorageKey) ws.clearSelection()
+    if (analysisStorageKey || mode === "discover") ws.clearSelection()
     if (briefing) {
       briefingRef.current = briefing
       ws.setJd(briefing)
@@ -219,9 +219,9 @@ function CareerInner({
   // 非 JD 专注页只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
   useEffect(() => {
     if (mode === "jd" || !hydrated || turnCount > 0 || kickoff) return
-    const prompt = profile.intake?.initialPrompt
+    const prompt = profile.initialPrompt ?? profile.intake?.initialPrompt
     if (prompt) setKickoff(prompt)
-  }, [hydrated, kickoff, mode, profile.intake?.initialPrompt, setKickoff, turnCount])
+  }, [hydrated, kickoff, mode, profile.initialPrompt, profile.intake?.initialPrompt, setKickoff, turnCount])
 
   // 接受 AI 优化后自动回写到该简历，避免丢失（跳过首挂载的空写）
   useEffect(() => {
@@ -283,6 +283,9 @@ function CareerInner({
     [analysisStorageKey, latestInterviewQuestion, mode],
   )
 
+  // 只读模式（模拟面试分析 / 岗位方向推荐）：预览不可交互，避免产生选中态污染上下文，也不出现「用 AI 优化」
+  const previewInteractive = !analysisStorageKey && mode !== "discover"
+
   return (
     <div className="rw-shell">
       <div className="rw-toolbar">
@@ -339,11 +342,11 @@ function CareerInner({
           <div className="p-4">
             <ResumePreview
               resumeData={resumeData}
-              interactive={!analysisStorageKey}
-              selectedId={analysisStorageKey ? null : ws.selection?.id ?? null}
+              interactive={previewInteractive}
+              selectedId={previewInteractive ? ws.selection?.id ?? null : null}
               highlightedIds={ws.highlightedIds}
-              onSelect={analysisStorageKey ? undefined : ws.setSelection}
-              onRequestAI={analysisStorageKey ? undefined : onRequestAI}
+              onSelect={previewInteractive ? ws.setSelection : undefined}
+              onRequestAI={previewInteractive ? onRequestAI : undefined}
             />
           </div>
         </div>

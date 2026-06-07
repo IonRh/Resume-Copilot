@@ -25,6 +25,7 @@ import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import type { AgentCard, AgentMode, AgentTurn } from "@/lib/agent/types"
 import {
   DiffCard,
+  DiscoverCard,
   InterviewCard,
   InterviewReportCard,
   JdCard,
@@ -631,6 +632,7 @@ function AssistantText({ content, streaming }: { content: string; streaming: boo
 
 function AgentCardView({ card, onApply }: { card: AgentCard; onApply: (prompt: string) => void }) {
   if (card.type === "score") return <ScoreCard card={card} />
+  if (card.type === "discover") return <DiscoverCard card={card} />
   if (card.type === "jd") return <JdCard card={card} onApply={onApply} />
   if (card.type === "interview") return <InterviewCard card={card} />
   if (card.type === "interview_report") return <InterviewReportCard card={card} />

@@ -9,6 +9,7 @@ import { streamChat } from "@/lib/agent/stream"
 import {
   BUILD_TOOL_SCHEMAS,
   DESIGN_TOOL_SCHEMAS,
+  DISCOVER_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
   INTERVIEWER_TOOL_SCHEMAS,
@@ -32,6 +33,8 @@ function toolsForMode(mode: AgentMode) {
       return BUILD_TOOL_SCHEMAS
     case "score":
       return SCORE_TOOL_SCHEMAS
+    case "discover":
+      return DISCOVER_TOOL_SCHEMAS
     case "jd":
       return JD_TOOL_SCHEMAS
     case "interview":
@@ -396,6 +399,7 @@ function stepLabel(tool: string): string {
     set_theme_color: "设置主题色",
     replace_resume: "整篇生成简历",
     present_score_report: "生成评分诊断",
+    present_career_directions: "推荐岗位方向",
     present_jd_match: "分析 JD 匹配",
     plan_interview_questions: "规划面试问题",
     present_interview_question: "展示当前面试题",
