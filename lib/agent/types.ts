@@ -128,10 +128,20 @@ export interface InterviewCard {
   questions: InterviewQuestion[]
 }
 
+/** 单题五维评分（1-5），源自 interview-coach rubric */
+export interface InterviewDimensionScores {
+  substance?: number
+  structure?: number
+  relevance?: number
+  credibility?: number
+  differentiation?: number
+}
+
 export interface InterviewReportItem {
   question: string
   score: number
   comment?: string
+  dimensions?: InterviewDimensionScores
 }
 
 export interface InterviewReportCard {

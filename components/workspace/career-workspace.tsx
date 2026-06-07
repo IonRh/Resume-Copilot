@@ -276,7 +276,13 @@ function CareerInner({
         "【用户回答】",
         answer,
         "",
-        "请按「单题评分 / 回答亮点 / 主要问题 / 面试官可能追问 / 可直接复述版本」给出简洁分析。",
+        "请严格按以下结构输出（用 ### 小标题）：",
+        "### 我听到的",
+        "### 亮点",
+        "### 待补齐",
+        "### 优先改进",
+        "### 可直接复述版",
+        "另附一行：**五维** substance/structure/relevance/credibility/differentiation = x/x/x/x/x；**面试官可能追问** 1-2 条。",
       ].join("\n")
       analysisPanelRef.current?.send(prompt, { displayText: "模型查看了你的面试回答，正在分析这一轮表现。" })
     },

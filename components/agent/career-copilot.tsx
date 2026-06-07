@@ -35,7 +35,11 @@ interface Msg {
   actions?: CopilotAction[]
 }
 
-const QUICK_PROMPTS = ["我该从哪开始？", "我的投递怎么样了？", "我适合投什么方向？"]
+const QUICK_CHIPS: { label: string; send: string }[] = [
+  { label: "从哪开始", send: "我该从哪开始？" },
+  { label: "投递进度", send: "我的投递怎么样了？" },
+  { label: "适合方向", send: "我适合投什么方向？" },
+]
 const MAX_ITERATIONS = 3
 
 export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps) {
@@ -108,14 +112,40 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
             }
           })
 
+        // 模型偶尔只调工具、气泡为空，或把话误写进已废弃的 reason 字段——抽到气泡里
+        let bubbleText = content?.trim() || ""
+        if (!bubbleText) {
+          for (const c of toolCalls.filter((t) => t.function.name === "suggest_actions")) {
+            try {
+              const raw = JSON.parse(c.function.arguments || "{}") as { actions?: Array<{ reason?: string; label?: string }> }
+              for (const a of raw.actions || []) {
+                if (typeof a.reason === "string" && a.reason.trim()) {
+                  bubbleText = a.reason.trim()
+                  break
+                }
+                if (!bubbleText && typeof a.label === "string" && a.label.trim().length > 10) {
+                  bubbleText = a.label.trim()
+                  break
+                }
+              }
+              if (bubbleText) break
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+
         historyRef.current.push({
           role: "assistant",
-          content: content || null,
+          content: bubbleText || content || null,
           tool_calls: toolCalls.length ? toolCalls : undefined,
         })
 
-        if (content || actions.length) {
-          setMessages((m) => [...m, { role: "assistant", content: content || "", actions: actions.length ? actions : undefined }])
+        if (bubbleText || actions.length) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: bubbleText, actions: actions.length ? actions : undefined },
+          ])
         }
 
         if (!toolCalls.length) break
@@ -241,7 +271,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold leading-tight">求职管家</div>
-              <div className="truncate text-xs text-muted-foreground">懂你全局 · 帮你定下一步</div>
+              <div className="truncate text-xs text-muted-foreground">陪你看全局 · 一起定下一步</div>
             </div>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={reset} disabled={busy} title="重新开始">
               <Icon icon="mdi:refresh" className="h-4 w-4" />
@@ -266,27 +296,16 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
                     </div>
                   ) : null}
                   {m.actions?.length ? (
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {m.actions.map((action, j) => (
                         <button
                           key={j}
                           type="button"
                           onClick={() => runAction(action)}
-                          className="group flex items-center gap-2.5 rounded-xl border border-border bg-card p-2.5 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+                          className="brand-gradient-bg inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90"
                         >
-                          <span className="brand-gradient-bg grid h-8 w-8 shrink-0 place-items-center rounded-lg">
-                            <Icon icon={COPILOT_ACTION_META[action.kind].icon} className="h-4 w-4" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">{action.label}</span>
-                            {action.reason ? (
-                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{action.reason}</span>
-                            ) : null}
-                          </span>
-                          <Icon
-                            icon="mdi:arrow-right"
-                            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
-                          />
+                          <Icon icon={COPILOT_ACTION_META[action.kind].icon} className="h-3.5 w-3.5" />
+                          {action.label}
                         </button>
                       ))}
                     </div>
@@ -317,14 +336,14 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
           {/* 快捷问题 */}
           {!busy ? (
             <div className="flex flex-wrap gap-1.5 border-t border-border px-3 pt-2.5">
-              {QUICK_PROMPTS.map((q) => (
+              {QUICK_CHIPS.map((chip) => (
                 <button
-                  key={q}
+                  key={chip.label}
                   type="button"
-                  onClick={() => send(q)}
+                  onClick={() => send(chip.send)}
                   className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
                 >
-                  {q}
+                  {chip.label}
                 </button>
               ))}
             </div>
@@ -337,7 +356,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="问问我接下来该做什么…"
+                placeholder="有什么卡住的，跟我说…"
                 rows={2}
                 disabled={busy}
                 className="max-h-28 w-full resize-none bg-transparent text-sm outline-none disabled:opacity-60"

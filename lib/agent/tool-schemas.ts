@@ -514,6 +514,21 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
                 question: { type: "string" },
                 kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
                 rationale: { type: "string", description: "内部理由：为什么这题适合该简历与目标岗位。不要展示给用户。" },
+                difficulty: {
+                  type: "string",
+                  enum: ["easy", "medium", "hard", "curveball"],
+                  description: "内部字段：题目难度定位，用于整场难度曲线。不展示给用户。",
+                },
+                targetDimension: {
+                  type: "string",
+                  description:
+                    "内部字段：主要考察维度，如 substance/structure/relevance/credibility/differentiation 或组合。不展示给用户。",
+                },
+                followUpHints: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "内部字段：2-3 条可能的追问方向，供后续追问参考。不展示给用户。",
+                },
               },
               required: ["question"],
             },
@@ -572,7 +587,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "present_interview_report",
       description:
-        "在模拟面试结束时，基于用户作答展示一份表现报告卡片（综合分、逐题评分与点评、优势与待提升）。仅在已经历若干轮问答后调用。",
+        "在模拟面试结束时，基于用户作答展示一份表现报告卡片（综合分、逐题评分与五维点评、优势与待提升）。仅在已经历若干轮问答后调用。",
       parameters: {
         type: "object",
         properties: {
@@ -586,6 +601,17 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
                 question: { type: "string" },
                 score: { type: "integer", description: "该题得分 0-100" },
                 comment: { type: "string", description: "针对该题作答的点评" },
+                dimensions: {
+                  type: "object",
+                  description: "可选：五维评分 1-5",
+                  properties: {
+                    substance: { type: "integer", description: "论据深度 1-5" },
+                    structure: { type: "integer", description: "结构清晰 1-5" },
+                    relevance: { type: "integer", description: "切题程度 1-5" },
+                    credibility: { type: "integer", description: "可信度 1-5" },
+                    differentiation: { type: "integer", description: "差异化 1-5" },
+                  },
+                },
               },
               required: ["question", "score"],
             },

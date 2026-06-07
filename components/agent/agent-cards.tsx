@@ -12,6 +12,7 @@ import type {
   ChangeKind,
   DiscoverCard as DiscoverCardType,
   InterviewCard as InterviewCardType,
+  InterviewDimensionScores,
   InterviewReportCard as InterviewReportCardType,
   JdCard as JdCardType,
   JdSuggestion,
@@ -703,6 +704,38 @@ export function InterviewCard({ card }: { card: InterviewCardType }) {
   )
 }
 
+const DIMENSION_LABELS: { key: keyof InterviewDimensionScores; label: string }[] = [
+  { key: "substance", label: "论据" },
+  { key: "structure", label: "结构" },
+  { key: "relevance", label: "切题" },
+  { key: "credibility", label: "可信" },
+  { key: "differentiation", label: "差异" },
+]
+
+function formatDimensions(dimensions?: InterviewDimensionScores): string | undefined {
+  if (!dimensions) return undefined
+  const parts = DIMENSION_LABELS.map(({ key, label }) => {
+    const v = dimensions[key]
+    return v !== undefined ? `${label}${v}` : null
+  }).filter(Boolean)
+  return parts.length ? parts.join(" · ") : undefined
+}
+
+function InterviewDimensionRow({ dimensions }: { dimensions?: InterviewDimensionScores }) {
+  if (!dimensions) return null
+  const entries = DIMENSION_LABELS.filter(({ key }) => dimensions[key] !== undefined)
+  if (!entries.length) return null
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {entries.map(({ key, label }) => (
+        <span key={key} className="kw-chip text-[10px]" title={label}>
+          {label} {dimensions[key]}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function reportToMarkdown(card: InterviewReportCardType): string {
   const lines: string[] = [
     `# 模拟面试表现报告`,
@@ -714,6 +747,8 @@ function reportToMarkdown(card: InterviewReportCardType): string {
   lines.push("## 逐题评分", "")
   card.items.forEach((it, i) => {
     lines.push(`${i + 1}. (${it.score}/100) ${it.question}`)
+    const dimText = formatDimensions(it.dimensions)
+    if (dimText) lines.push(`   - 五维：${dimText}`)
     if (it.comment) lines.push(`   - ${it.comment}`)
   })
   if (card.strengths?.length) {
@@ -760,6 +795,7 @@ export function InterviewReportCard({ card }: { card: InterviewReportCardType })
                 <span className="kw-chip shrink-0 text-[10px]">{it.score}</span>
               </div>
               {it.comment ? <p className="mt-1 text-xs text-muted-foreground">{it.comment}</p> : null}
+              <InterviewDimensionRow dimensions={it.dimensions} />
             </div>
           ))}
         </div>

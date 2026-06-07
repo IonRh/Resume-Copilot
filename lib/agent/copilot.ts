@@ -24,11 +24,10 @@ export type CopilotActionKind =
 /** 一个可点击的行动入口（由模型产出或兜底生成，点击后由 user-center 路由） */
 export interface CopilotAction {
   kind: CopilotActionKind
+  /** 按钮上显示的短标签，2-8 字 */
   label: string
   /** 针对某份简历的操作需要带上其 id */
   resumeId?: string
-  /** 可选：一句话说明推荐理由 */
-  reason?: string
 }
 
 /** 行动按钮的图标与默认文案（组件与兜底共用） */
@@ -165,17 +164,26 @@ export function buildCopilotContext(
 /** 构建求职管家的 system prompt */
 export function buildCopilotSystemPrompt(summary: string): string {
   return [
-    "你是「求职管家」，一款 AI-Native 求职平台的全局助理，坐在用户的简历与投递之上，统领整个求职流程。",
-    "你能解读用户的简历与投递全貌，诊断求职进展，并把用户带到平台内对应的工具：简历润色、JD 匹配优化、岗位方向推荐、模拟面试、投递管理、创建简历。",
+    "你是「求职管家」，用户身边的求职搭子——像一位靠谱的学长/学姐，懂简历也懂投递，陪用户把求职一步步走顺。",
+    "你能读懂用户的简历与投递全貌，轻轻帮用户定下一步，并把用户带到平台内对应的工具：简历润色、JD 匹配、岗位方向推荐、模拟面试、投递管理、创建简历。",
+    "",
+    "说话风格（很重要）：",
+    "- 温暖、口语化、有人味；先共情再建议，别像系统在念报表。",
+    "- 禁止堆砌数字和状态统计（如「0 个进行中、1 条已关闭」）；把数据翻译成用户能感知的阶段，例如「简历底子有了，投递还没真正动起来」。",
+    "- 句子短、语气轻；可以适度用「呀」「吧」「～」，但别油、别卖萌过头。",
+    "- 肯定用户已有的进展（哪怕只是「简历已经写好了」），再给下一步，让用户觉得被支持而不是被考核。",
+    "- 推荐时用「我建议」「要不先…」这类商量口吻，少用「建议启动」「当前状态显示」这类公文腔。",
     "",
     "工作方式：",
-    "1. 回答简洁、口语化、像一位贴心的求职顾问；开场先用一句话点出用户当前的求职现状。",
-    "2. 基于真实状态，只推荐用户「现在最该做的一件事」（最多 2-3 个备选），不要罗列所有功能。",
-    "3. 每当你建议用户去做某件事，必须调用 suggest_actions 渲染可点击的入口按钮；不要只用文字描述「你可以去 XX」。",
-    "4. 针对某份具体简历的操作（润色/JD匹配/方向推荐/模拟面试/编辑），必须在 action 里带上该简历的 id（见下方简历清单）；若用户没指定，默认用最近更新的那份。",
-    "5. create_resume 与 applications 不需要 resumeId。",
-    "6. 你只负责「诊断 + 导航」，不直接修改简历或投递；不要声称你已经帮用户改好了什么。",
-    "7. 信息不足时可以先简短追问，但不要喋喋不休。始终使用简体中文。",
+    "1. 开场先打个招呼，用一两句暖心的话说说用户大概处在什么阶段；不要上来就报数。",
+    "2. 基于真实状态，只推「现在最该做的一件事」（最多 2-3 个备选），别罗列所有功能。",
+    "3. 每当你建议用户去做某件事，必须调用 suggest_actions 渲染可点击的入口按钮；解释和建议的话写在对话气泡里，不要写在按钮里。",
+    "4. 调用 suggest_actions 之前，必须先输出 1-3 句对话气泡文字；禁止只调工具、气泡为空。",
+    "5. 按钮 label 只能是 2-8 字的动词短语（如「做 JD 匹配」「看看方向」），禁止在 label 里写完整句子。",
+    "6. 针对某份具体简历的操作（润色/JD匹配/方向推荐/模拟面试/编辑），必须在 action 里带上该简历的 id（见下方简历清单）；若用户没指定，默认用最近更新的那份。",
+    "7. create_resume 与 applications 不需要 resumeId。",
+    "8. 你只负责「陪跑 + 导航」，不直接改简历或投递；别声称已经帮用户改好了什么。",
+    "9. 信息不够时可以简短追问，别喋喋不休。始终使用简体中文。",
     "",
     "可选的行动类型（suggest_actions.kind）：",
     "- create_resume：创建一份新简历",
@@ -193,7 +201,7 @@ export function buildCopilotSystemPrompt(summary: string): string {
 
 /** 进入面板后自动发起的首条（隐藏）指令，触发开场播报 */
 export const COPILOT_KICKOFF =
-  "请先用一两句话总结我当前的求职现状，再推荐我现在最该做的一件事，并调用 suggest_actions 给出对应的入口按钮。"
+  "先跟我打个招呼，用一两句暖心、口语化的话说说我现在大概什么阶段（别念数字报表），再温柔地推荐我最该做的下一步，并调用 suggest_actions 给出入口按钮。"
 
 /** suggest_actions 工具：把推荐渲染成可点击按钮 */
 export const COPILOT_TOOLS = [
@@ -220,14 +228,13 @@ export const COPILOT_TOOLS = [
                 },
                 label: {
                   type: "string",
-                  description: "按钮文字，简短动词短语，如「润色简历」「做 JD 匹配」",
+                  description: "按钮文字，2-8 字动词短语，如「润色简历」「做 JD 匹配」。禁止写完整句子。",
                 },
                 resumeId: {
                   type: "string",
                   description:
                     "针对某份简历的操作必须带上其 id（见简历清单）；create_resume / applications 不需要。",
                 },
-                reason: { type: "string", description: "可选：一句话推荐理由" },
               },
               required: ["kind", "label"],
             },
@@ -250,12 +257,11 @@ export function normalizeActions(raw: unknown): CopilotAction[] {
     const needsResume = kind !== "create_resume" && kind !== "applications"
     const resumeId = typeof o.resumeId === "string" && o.resumeId ? o.resumeId : undefined
     if (needsResume && !resumeId) continue
-    out.push({
-      kind,
-      label: typeof o.label === "string" && o.label.trim() ? o.label.trim() : COPILOT_ACTION_META[kind].label,
-      resumeId,
-      reason: typeof o.reason === "string" && o.reason.trim() ? o.reason.trim() : undefined,
-    })
+    const rawLabel = typeof o.label === "string" ? o.label.trim() : ""
+    // 模型偶尔把整句写进 label，过长则回退默认短标签
+    const label =
+      rawLabel && rawLabel.length <= 10 ? rawLabel : COPILOT_ACTION_META[kind].label
+    out.push({ kind, label, resumeId })
     if (out.length >= 3) break
   }
   return out
@@ -267,16 +273,16 @@ export function buildFallbackBriefing(signals: JobSearchSignals): { text: string
 
   if (signals.resumeCount === 0) {
     return {
-      text: "你还没有简历。我们先建一份，求职就从这里开始。",
-      actions: [{ kind: "create_resume", label: "创建第一份简历" }],
+      text: "嗨～看起来咱们还没开始写简历呢。先把第一份搭起来，后面的方向我陪你一起捋。",
+      actions: [{ kind: "create_resume", label: "创建简历" }],
     }
   }
 
   if (signals.applicationCount === 0 && latestId) {
     return {
-      text: "你已经有简历，但还没开始投递。先看看自己适合哪些方向，再针对性优化，命中率会更高。",
+      text: "简历底子已经有了，不错！投递还没真正动起来——要不先看看适合往哪些方向投？",
       actions: [
-        { kind: "discover", label: "看看适合的方向", resumeId: latestId },
+        { kind: "discover", label: "看看方向", resumeId: latestId },
         { kind: "jd_match", label: "做 JD 匹配", resumeId: latestId },
       ],
     }
@@ -284,43 +290,43 @@ export function buildFallbackBriefing(signals: JobSearchSignals): { text: string
 
   if (signals.staleCount > 0 && latestId) {
     return {
-      text: `有 ${signals.staleCount} 个投递超过一周没动静了，建议去跟进一下，同时复查简历与岗位的匹配度。`,
+      text: "有几份投递晾了一阵儿了，去跟一下进度，顺便看看简历还匹不匹配～",
       actions: [
-        { kind: "applications", label: "去跟进投递" },
-        { kind: "jd_match", label: "复查匹配度", resumeId: latestId },
+        { kind: "applications", label: "查看投递" },
+        { kind: "jd_match", label: "复查匹配", resumeId: latestId },
       ],
     }
   }
 
   if (signals.interviewCount > 0 && latestId) {
     return {
-      text: "有岗位进入面试阶段了，先做一轮模拟面试热热身吧。",
+      text: "有面试机会啦！趁还没上战场，来练一轮模拟面试热热身吧～",
       actions: [
-        { kind: "interview", label: "开始模拟面试", resumeId: latestId },
-        { kind: "applications", label: "查看投递进度" },
+        { kind: "interview", label: "模拟面试", resumeId: latestId },
+        { kind: "applications", label: "查看投递" },
       ],
     }
   }
 
   if (signals.latestResume?.buildMode && latestId) {
     return {
-      text: "你有一份还在对话创建中的简历草稿，先把它完成吧。",
-      actions: [{ kind: "edit_resume", label: "继续完成简历", resumeId: latestId }],
+      text: "有一份简历还在搭架子，把它收尾完成，后面才顺～",
+      actions: [{ kind: "edit_resume", label: "继续写", resumeId: latestId }],
     }
   }
 
   if (latestId) {
     return {
-      text: "简历已经就绪。要不要让我帮你再打磨一下，或者看看适合的新方向？",
+      text: "简历看着挺稳的～想再打磨打磨，还是看看有没有新方向？",
       actions: [
         { kind: "polish", label: "润色简历", resumeId: latestId },
-        { kind: "discover", label: "探索新方向", resumeId: latestId },
+        { kind: "discover", label: "看看方向", resumeId: latestId },
       ],
     }
   }
 
   return {
-    text: "我可以帮你规划求职的下一步。",
+    text: "来啦～有什么卡住的，跟我说，我帮你理理下一步。",
     actions: [{ kind: "create_resume", label: "创建简历" }],
   }
 }

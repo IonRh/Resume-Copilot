@@ -7,7 +7,7 @@ import type {
   JobIntentionItem,
   JSONContent,
 } from "@/types/resume"
-import type { AgentCard, ChangeSet, ToolResult } from "./types"
+import type { AgentCard, ChangeSet, InterviewDimensionScores, ToolResult } from "./types"
 import {
   buildResumeOutline,
   docToText,
@@ -29,6 +29,25 @@ const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : 
 const bool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v : undefined)
 const int = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined
+const clampDimension = (v: unknown): number | undefined => {
+  const n = int(v)
+  if (n === undefined) return undefined
+  return Math.min(5, Math.max(1, n))
+}
+
+function parseInterviewDimensions(raw: unknown): InterviewDimensionScores | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as Args
+  const substance = clampDimension(o.substance)
+  const structure = clampDimension(o.structure)
+  const relevance = clampDimension(o.relevance)
+  const credibility = clampDimension(o.credibility)
+  const differentiation = clampDimension(o.differentiation)
+  if (substance === undefined && structure === undefined && relevance === undefined && credibility === undefined && differentiation === undefined) {
+    return undefined
+  }
+  return { substance, structure, relevance, credibility, differentiation }
+}
 const targetIdPattern = /^(?:element|row|module)#([^\s,，)）;；]+)/i
 const normalizeTargetId = (id: string): string => {
   const value = id.trim()
@@ -800,10 +819,14 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     case "plan_interview_questions": {
       const questions = (Array.isArray(args.questions) ? args.questions : []).map((q, index) => {
         const o = (q || {}) as Args
+        const hints = Array.isArray(o.followUpHints) ? o.followUpHints.map(String).filter(Boolean) : []
         return [
           `${index + 1}. ${str(o.question)}`,
           str(o.kind) ? `类别：${str(o.kind)}` : "",
+          str(o.difficulty) ? `难度：${str(o.difficulty)}` : "",
+          str(o.targetDimension) ? `考察维度：${str(o.targetDimension)}` : "",
           str(o.rationale) ? `内部理由：${str(o.rationale)}` : "",
+          hints.length ? `追问参考：${hints.join("；")}` : "",
         ]
           .filter(Boolean)
           .join("；")
@@ -852,7 +875,13 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
         summary: str(args.summary) || undefined,
         items: (Array.isArray(args.items) ? args.items : []).map((it) => {
           const o = (it || {}) as Args
-          return { question: str(o.question), score: int(o.score) ?? 0, comment: str(o.comment) || undefined }
+          const dimensions = parseInterviewDimensions(o.dimensions)
+          return {
+            question: str(o.question),
+            score: int(o.score) ?? 0,
+            comment: str(o.comment) || undefined,
+            dimensions,
+          }
         }),
         strengths: Array.isArray(args.strengths) ? args.strengths.map(String) : undefined,
         improvements: Array.isArray(args.improvements) ? args.improvements.map(String) : undefined,
