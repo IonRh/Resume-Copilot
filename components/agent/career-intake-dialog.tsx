@@ -113,11 +113,12 @@ export default function CareerIntakeDialog({
 
   const intakeTools = mode === "interview" ? [INTAKE_TOOL, ...INTERVIEW_INTAKE_TOOL_SCHEMAS] : [INTAKE_TOOL]
 
-  const runResearch = async (args: Record<string, unknown>, outline: string): Promise<string> => {
+  const runResearch = async (args: Record<string, unknown>): Promise<string> => {
     setMessages((m) => [
       ...m,
       { role: "tool", content: "深入研究公司中", status: "running" },
     ])
+    // 研究只针对「公司 + 岗位」本身，刻意不传简历，避免研究因简历而偏向某些方向、忽略其它。
     const res = await fetch("/api/agent/research", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -125,7 +126,6 @@ export default function CareerIntakeDialog({
         company: typeof args.company === "string" ? args.company : "",
         role: typeof args.role === "string" ? args.role : "",
         jd: typeof args.jd === "string" && args.jd.trim() ? args.jd : briefingFromHistory(),
-        resumeOutline: outline,
       }),
     })
     const payload = (await res.json().catch(() => ({}))) as { research?: string; error?: string; detail?: string }
@@ -194,7 +194,7 @@ export default function CareerIntakeDialog({
           } catch {
             args = {}
           }
-          const result = await runResearch(args, outline)
+          const result = await runResearch(args)
           historyRef.current.push({
             role: "tool",
             tool_call_id: research.id,

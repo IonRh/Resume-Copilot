@@ -6,7 +6,6 @@ interface ResearchRequest {
   company?: string
   role?: string
   jd?: string
-  resumeOutline?: string
 }
 
 function resolveEndpoint(baseUrl: string): string {
@@ -66,7 +65,6 @@ export async function POST(req: Request) {
   const company = str(body.company)
   const role = str(body.role)
   const jd = str(body.jd)
-  const resumeOutline = str(body.resumeOutline)
   if (!company && !role && !jd) {
     return Response.json({ error: "缺少公司、岗位或 JD 信息" }, { status: 400 })
   }
@@ -80,18 +78,18 @@ export async function POST(req: Request) {
   ].join("\n")
 
   const user = [
-    "请联网搜索，并为面试官整理一份可直接用于出题的研究简报。",
+    "请联网搜索，并为面试官整理一份关于「这家公司 + 这个岗位」本身的研究简报。",
+    "这份研究面向岗位本身，不要针对任何特定候选人来取舍内容；务必全面、中立，覆盖该岗位真实面试中常考的方方面面，不要只挑某几个方向深挖而忽略其它。",
     "",
     `公司：${company || "用户未明确给出，请从岗位/JD 中推断"}`,
     `岗位/方向：${role || "用户未明确给出，请从 JD 中推断"}`,
     jd ? `岗位/JD/面试设定：\n${jd}` : "",
-    resumeOutline ? `候选人简历结构：\n${resumeOutline.slice(0, 5000)}` : "",
     "",
     "输出要求：",
     "1. 使用简体中文，结构化 Markdown。",
-    "2. 重点覆盖：公司业务/产品与近期动态、岗位关注的核心能力、相关技术栈或业务关键词、结合候选人简历最值得深挖的方向、5-8 个可用于真实面试的追问主题。",
+    "2. 重点覆盖：公司业务/产品与近期动态、该岗位关注的核心能力与任职要求、相关技术栈或业务关键词、该公司该岗位常见的面试重点与高频追问主题（5-8 个，尽量来自真实面经）。",
     "3. 每个关键结论都要带上来源 URL（行内链接形式），优先引用官网、权威媒体、招聘页与真实面经。",
-    "4. 不要写作答提示、参考答案或评分标准。",
+    "4. 不要写作答提示、参考答案或评分标准，也不要做针对某份简历的匹配分析。",
   ]
     .filter(Boolean)
     .join("\n")

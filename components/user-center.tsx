@@ -30,6 +30,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import ExportButton from "@/components/export-button"
 import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
+import CareerCopilot from "@/components/agent/career-copilot"
+import type { CopilotAction } from "@/lib/agent/copilot"
 
 type SortKey = "name" | "createdAt" | "updatedAt"
 type SortDir = "asc" | "desc"
@@ -231,7 +233,7 @@ export default function UserCenter() {
   // 默认进入加载态；真正挂载后若已有缓存，则立即展示并在后台刷新
   const [loading, setLoading] = useState(true)
   const [hydrated, setHydrated] = useState(false)
-  const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview" }>({
+  const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview"; resumeId?: string }>({
     open: false,
     mode: "jd",
   })
@@ -442,6 +444,19 @@ export default function UserCenter() {
     [mostRecent, toast],
   )
 
+  // 进入指定简历的润色工作区：写入待办指令后跳转
+  const runPolish = useCallback(
+    (id: string) => {
+      try {
+        sessionStorage.setItem("agent-kickoff", JSON.stringify({ prompt: POLISH_PROMPT }))
+      } catch {
+        /* sessionStorage 不可用时仍正常进入编辑页 */
+      }
+      router.push(`/edit/${id}`)
+    },
+    [router],
+  )
+
   // 简历润色入口：先选简历，再把待办指令写入 sessionStorage 并进入工作区
   const startPolish = useCallback(
     () => {
@@ -450,15 +465,10 @@ export default function UserCenter() {
         toast({ title: "请选择简历", description: "选择一份简历后再进入润色。" })
         return
       }
-      try {
-        sessionStorage.setItem("agent-kickoff", JSON.stringify({ prompt: POLISH_PROMPT }))
-      } catch {
-        /* sessionStorage 不可用时仍正常进入编辑页 */
-      }
       setPolishDialogOpen(false)
-      router.push(`/edit/${id}`)
+      runPolish(id)
     },
-    [mostRecent?.id, polishResumeId, router, toast],
+    [mostRecent?.id, polishResumeId, runPolish, toast],
   )
 
   // 岗位方向推荐：先选简历，再进入专注工作台，由 AI 反推适合的方向
@@ -483,14 +493,47 @@ export default function UserCenter() {
 
   // JD 匹配 / 模拟面试：先经「选简历 + 对话收集」模态框，再进入专注工作台
   const openIntake = useCallback(
-    (mode: "jd" | "interview") => {
+    (mode: "jd" | "interview", resumeId?: string) => {
       if (!mostRecent) {
         toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
         return
       }
-      setIntake({ open: true, mode })
+      setIntake({ open: true, mode, resumeId })
     },
     [mostRecent, toast],
+  )
+
+  // 求职管家：把行动意图映射到现有入口（全部复用，零新逻辑）
+  const handleCopilotAction = useCallback(
+    (action: CopilotAction) => {
+      switch (action.kind) {
+        case "create_resume":
+          setCreateOpen(true)
+          break
+        case "applications":
+          router.push("/applications")
+          break
+        case "polish":
+          if (action.resumeId) runPolish(action.resumeId)
+          break
+        case "discover":
+          if (action.resumeId) router.push(`/career/discover/${action.resumeId}`)
+          break
+        case "jd_match":
+          if (action.resumeId) openIntake("jd", action.resumeId)
+          break
+        case "interview":
+          if (action.resumeId) openIntake("interview", action.resumeId)
+          break
+        case "edit_resume":
+          if (action.resumeId) {
+            const target = items.find((it) => it.id === action.resumeId)
+            router.push(target?.resumeData.buildMode ? `/create/${action.resumeId}` : `/edit/${action.resumeId}`)
+          }
+          break
+      }
+    },
+    [items, openIntake, router, runPolish],
   )
 
   const handleDelete = async (ids: string[]) => {
@@ -841,7 +884,7 @@ export default function UserCenter() {
         open={intake.open}
         mode={intake.mode}
         resumes={items}
-        defaultResumeId={mostRecent?.id}
+        defaultResumeId={intake.resumeId ?? mostRecent?.id}
         onOpenChange={(o) => setIntake((s) => ({ ...s, open: o }))}
       />
 
@@ -1021,6 +1064,9 @@ export default function UserCenter() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 右下角常驻「求职管家」Copilot */}
+      <CareerCopilot resumes={items} onAction={handleCopilotAction} />
     </div>
   )
 }
