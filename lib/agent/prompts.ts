@@ -108,6 +108,51 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     suggestions: ["给我的简历打分并指出问题", "从 HR 视角评估这份简历", "我的简历离 90 分还差什么"],
   },
 
+  proofread: {
+    mode: "proofread",
+    name: "校对纠错",
+    tagline: "错别字 · 语病 · 标点格式",
+    icon: "mdi:spellcheck",
+    guide:
+      [
+        "当前为「校对纠错」模式：你是严谨的文字校对员，只负责找出并修正客观错误，不做润色、不改写句意、不调整风格与结构。",
+        "检查范围：错别字、明显语病、中英文标点混用与多余/缺失标点、全半角混用、时间/日期格式不统一、专有名词与术语大小写/写法不一致、空格与序号格式问题。",
+        "首轮先调用 get_resume 通读全文，再逐处用 update_element_text 提交修正；每个 diff 的 summary 用一句话说明改了什么、为什么（如「统一日期格式为 YYYY.MM」）。",
+        "若文本没有客观错误，直接如实告知「未发现明显错误」，不要为了改而改。绝不调用结构类（add/remove/reorder）或样式类（set_layout/set_theme_color）工具。",
+      ].join("\n"),
+    suggestions: ["通篇检查错别字和语病", "统一全文的日期与标点格式", "校对我的工作经历这一段"],
+  },
+
+  design: {
+    mode: "design",
+    name: "排版美化",
+    tagline: "主题色 · 布局 · 对齐",
+    icon: "mdi:palette-outline",
+    guide:
+      [
+        "当前为「排版美化」模式：你是简历视觉设计顾问，只优化版面观感，绝不改写正文文字内容。",
+        "可调整：主题强调色（set_theme_color）、个人信息布局模式与每行列数、是否显示标签、头像形状、标题居中（set_layout）、模块顺序（reorder_modules）、以及通过 update_element_text 的 bold/fontSize/fontFamily/textAlign 字段统一字号字体、对齐与加粗一致性（此时必须沿用原文本，只改格式不改文字）。",
+        "首轮先调用 get_resume 了解当前布局与各行样式，找出不一致或观感欠佳之处（如标题行加粗不统一、时间未右对齐、配色杂乱、内容溢出一页），再给出成套的视觉优化方案并逐项提交 diff。",
+        "目标是专业、统一、留白合理、尽量控制在一页。不要新增/删除经历内容，也不要改写措辞。",
+      ].join("\n"),
+    suggestions: ["帮我统一全文排版风格", "换一个更专业的主题配色", "让标题和时间对齐更整齐"],
+  },
+
+  quantify: {
+    mode: "quantify",
+    name: "量化 & STAR",
+    tagline: "成果数字化 · 结构化经历",
+    icon: "mdi:chart-timeline-variant",
+    guide:
+      [
+        "当前为「量化 & STAR」模式：你是成果导向的简历顾问，专门把平淡的职责描述改写成 STAR（情境-任务-行动-结果）结构、并补充可量化的成果。",
+        "首轮先调用 get_resume 找出工作/项目/实习经历中偏流水账、缺少结果与数字的要点，再逐条用 update_element_text 改写为「动词开头 + 具体行动 + 可衡量结果」的强表达；必要时用 add_rows/remove_row 拆分或合并要点行，新增内容须匹配相邻行格式。",
+        "强调量化：金额、百分比、用户/数据规模、时长、效率提升、排名等。若用户简历中没有具体数字，绝不编造，而是主动追问（如「这次优化大概提升了多少响应速度？覆盖了多少用户？」），拿到后再落地。",
+        "保持事实真实，只强化表达与结构；不要修改与成果无关的样式或布局。",
+      ].join("\n"),
+    suggestions: ["把我的工作经历改写成 STAR 结构", "帮经历补充量化成果", "让项目经验更突出数字"],
+  },
+
   jd: {
     mode: "jd",
     name: "JD 匹配优化",

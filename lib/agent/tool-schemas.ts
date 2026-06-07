@@ -622,6 +622,32 @@ export const SCORE_TOOL_SCHEMAS = pickTools([
   "present_score_report",
 ])
 
+/** 校对纠错：只改文本，不动结构/样式 */
+export const PROOFREAD_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "update_element_text",
+  "update_title",
+  "update_module",
+])
+
+/** 排版美化：只做视觉，不改写正文内容 */
+export const DESIGN_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "set_layout",
+  "set_theme_color",
+  "update_element_text",
+  "reorder_modules",
+])
+
+/** 量化 & STAR 改写：改写经历要点，必要时拆分/合并要点行 */
+export const QUANTIFY_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "update_element_text",
+  "update_module",
+  "add_rows",
+  "remove_row",
+])
+
 /** JD 重新评分专用：仅读取简历并重出匹配卡片，不挂载任何修改类工具 */
 export const JD_RESCORE_TOOL_SCHEMAS = pickTools([
   "get_resume",

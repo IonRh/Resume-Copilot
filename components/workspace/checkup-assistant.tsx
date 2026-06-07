@@ -36,6 +36,14 @@ function priorityClass(priority: AiCheckupIssue["priority"]): string {
   return "border-slate-200 bg-slate-50 text-slate-600"
 }
 
+function scoreVerdict(score: number): string {
+  if (score >= 90) return "优秀"
+  if (score >= 80) return "良好"
+  if (score >= 70) return "尚可"
+  if (score >= 60) return "待提升"
+  return "需重写"
+}
+
 export default function CheckupAssistant() {
   const ws = useResumeWorkspace()
   const [report, setReport] = useState<AiCheckupReport | null>(null)
@@ -104,12 +112,16 @@ export default function CheckupAssistant() {
       ? "AI 侧边栏开启时暂停自动体检"
       : `下次自动体检还有 ${formatCountdown(countdown)}`
 
+  const hasScore = typeof report?.overallScore === "number"
   const bubbleTitle = useMemo(() => {
     if (error) return "AI 体检失败"
     if (checking) return "AI 正在体检"
     if (!report) return ""
-    if (report.issues.length === 0) return "AI 体检未发现明显问题"
-    return `AI 体检发现 ${report.issues.length} 个优化点`
+    const scorePart = typeof report.overallScore === "number" ? `${Math.round(report.overallScore)} 分` : ""
+    if (report.issues.length === 0) return scorePart ? `AI 体检 ${scorePart} · 未发现明显问题` : "AI 体检未发现明显问题"
+    return scorePart
+      ? `AI 体检 ${scorePart} · ${report.issues.length} 个优化点`
+      : `AI 体检发现 ${report.issues.length} 个优化点`
   }, [checking, error, report])
 
   const runIssueWithAgent = (issue: AiCheckupIssue) => {
@@ -145,7 +157,11 @@ export default function CheckupAssistant() {
       >
         <Icon icon={checking ? "mdi:loading" : "mdi:stethoscope"} className={`h-4 w-4 ${checking ? "agent-spin" : ""}`} />
         <span className="hidden sm:inline">体检</span>
-        {!checking && report?.issues.length ? (
+        {!checking && hasScore ? (
+          <span className="grid h-4 min-w-5 place-items-center rounded-full bg-primary/10 px-1 text-[10px] font-bold text-primary">
+            {Math.round(report!.overallScore!)}
+          </span>
+        ) : !checking && report?.issues.length ? (
           <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-100 px-1 text-[10px] font-bold text-amber-700">
             {report.issues.length}
           </span>
@@ -181,15 +197,64 @@ export default function CheckupAssistant() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Icon icon="mdi:stethoscope" className="h-5 w-5 text-primary" />
-              AI 简历体检建议
+              AI 简历体检报告
             </DialogTitle>
-            <DialogDescription>
-              {report?.overallScore !== undefined ? `综合评分 ${Math.round(report.overallScore)} / 100。` : ""}
-              {report?.summary}
-            </DialogDescription>
+            <DialogDescription>{report?.summary}</DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[62vh] space-y-3 overflow-y-auto pr-1">
+            {hasScore ? (
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <div className="flex items-center gap-4">
+                  <div className="score-ring" style={{ ["--val" as string]: String(Math.round(report!.overallScore!)) }}>
+                    {Math.round(report!.overallScore!)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      综合得分 {Math.round(report!.overallScore!)} / 100 · {scoreVerdict(report!.overallScore!)}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">站在 HR 视角的整体诊断，分数随简历改进而提升。</p>
+                  </div>
+                </div>
+
+                {report?.dimensions.length ? (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {report.dimensions.map((d) => (
+                      <div key={d.name}>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium">{d.name}</span>
+                          <span className="text-muted-foreground">{d.score}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="brand-gradient-bg h-full rounded-full"
+                            style={{ width: `${Math.max(0, Math.min(100, d.score))}%` }}
+                          />
+                        </div>
+                        {d.comment ? <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{d.comment}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {report?.strengths.length ? (
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold">简历亮点</div>
+                    <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+                      {report.strengths.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {report?.issues.length ? (
+              <div className="px-0.5 pt-1 text-xs font-semibold text-muted-foreground">
+                优化项（{report.issues.length}）
+              </div>
+            ) : null}
             {report?.issues.length ? report.issues.map((issue) => (
               <div key={issue.id} className="rounded-lg border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">

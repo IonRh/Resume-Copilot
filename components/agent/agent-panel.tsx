@@ -35,10 +35,16 @@ import {
 import { Markdown } from "./markdown"
 
 // 编辑器三分屏内仅保留贴合「编辑工作流」的模式；JD 匹配 / 模拟面试为各自专注页（lockedMode）。
+// 评分诊断已移出 Agent，统一由顶部「体检」承担；此处只保留编辑类工作流模式。
 const MODES: { key: AgentMode; label: string; icon: string }[] = [
   { key: "edit", label: "编辑", icon: "mdi:pencil-outline" },
-  { key: "score", label: "评分诊断", icon: "mdi:chart-box-outline" },
+  { key: "proofread", label: "校对纠错", icon: "mdi:spellcheck" },
+  { key: "design", label: "排版美化", icon: "mdi:palette-outline" },
+  { key: "quantify", label: "量化 & STAR", icon: "mdi:chart-timeline-variant" },
 ]
+
+// 三分屏编辑器内可用的 Agent 模式（其余如 jd/interview 为独立专注页）。
+const EDITOR_MODES = new Set<AgentMode>(["edit", "proofread", "design", "quantify"])
 
 export interface AgentPanelHandle {
   send: (text: string, opts?: { displayText?: string }) => void
@@ -81,8 +87,8 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   const jdPopRef = useRef<HTMLDivElement | null>(null)
   const jdHistoryLenRef = useRef<number | null>(null)
 
-  // 锁定模式（专注页）直接采用 lockedMode；编辑器内只在 edit / score 间切换，残留的 jd/interview 归一到 edit。
-  const panelMode: AgentMode = lockedMode ?? (ws.mode === "score" ? "score" : "edit")
+  // 锁定模式（专注页）直接采用 lockedMode；编辑器内在 EDITOR_MODES 间切换，残留的 jd/interview 归一到 edit。
+  const panelMode: AgentMode = lockedMode ?? (EDITOR_MODES.has(ws.mode) ? ws.mode : "edit")
   const profile = AGENT_PROFILES[panelMode]
 
   // 专注页：确保 store.mode 与锁定模式一致，使 system prompt 正确。

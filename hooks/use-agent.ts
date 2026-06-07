@@ -8,11 +8,14 @@ import { buildSystemPrompt, JD_RESCORE_INSTRUCTION } from "@/lib/agent/prompts"
 import { streamChat } from "@/lib/agent/stream"
 import {
   BUILD_TOOL_SCHEMAS,
+  DESIGN_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
   INTERVIEWER_TOOL_SCHEMAS,
   JD_RESCORE_TOOL_SCHEMAS,
   JD_TOOL_SCHEMAS,
+  PROOFREAD_TOOL_SCHEMAS,
+  QUANTIFY_TOOL_SCHEMAS,
   SCORE_TOOL_SCHEMAS,
 } from "@/lib/agent/tool-schemas"
 import type { AgentMode, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
@@ -35,6 +38,12 @@ function toolsForMode(mode: AgentMode) {
       return INTERVIEWER_TOOL_SCHEMAS
     case "interviewAnalysis":
       return INTERVIEW_ANALYSIS_TOOL_SCHEMAS
+    case "proofread":
+      return PROOFREAD_TOOL_SCHEMAS
+    case "design":
+      return DESIGN_TOOL_SCHEMAS
+    case "quantify":
+      return QUANTIFY_TOOL_SCHEMAS
     case "edit":
     default:
       return EDIT_TOOL_SCHEMAS

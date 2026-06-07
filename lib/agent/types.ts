@@ -143,7 +143,27 @@ export interface InterviewReportCard {
   improvements?: string[]
 }
 
-export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard
+/** 岗位方向推荐：单个推荐方向 */
+export interface CareerDirection {
+  /** 方向名，如「后端开发」 */
+  title: string
+  /** 与简历的匹配度 0-100 */
+  matchScore: number
+  /** 推荐理由：命中了简历中的哪些专业/技能/经历 */
+  reason?: string
+  /** 该方向的典型岗位 */
+  positions?: string[]
+  /** 当前简历相对该方向的能力缺口 */
+  gaps?: string[]
+}
+
+export interface DiscoverCard {
+  type: "discover"
+  summary?: string
+  directions: CareerDirection[]
+}
+
+export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard | DiscoverCard
 
 /* ---------- 对话回合（UI 层） ---------- */
 
@@ -195,7 +215,17 @@ export interface ChatMessage {
 }
 
 /** Agent 顶部模式 */
-export type AgentMode = "edit" | "score" | "jd" | "interview" | "interviewAnalysis" | "build"
+export type AgentMode =
+  | "edit"
+  | "score"
+  | "jd"
+  | "interview"
+  | "interviewAnalysis"
+  | "build"
+  | "proofread"
+  | "design"
+  | "quantify"
+  | "discover"
 
 /** 工具执行结果 */
 export interface ToolResult {

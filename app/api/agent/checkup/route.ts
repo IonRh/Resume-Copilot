@@ -1,6 +1,11 @@
 import type { ResumeData } from "@/types/resume"
 import { buildResumeOutline } from "@/lib/agent/changeset"
-import { runCheckup, type AiCheckupReport, type AiCheckupIssue } from "@/lib/agent/checkup"
+import {
+  runCheckup,
+  type AiCheckupReport,
+  type AiCheckupIssue,
+  type CheckupDimension,
+} from "@/lib/agent/checkup"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,6 +38,34 @@ function normalizePriority(v: unknown): AiCheckupIssue["priority"] {
   return v === "high" || v === "medium" || v === "low" ? v : "medium"
 }
 
+function clampScore(v: unknown): number | undefined {
+  const n = num(v)
+  if (n === undefined) return undefined
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function normalizeDimensions(raw: unknown): CheckupDimension[] {
+  if (!Array.isArray(raw)) return []
+  const dims: CheckupDimension[] = []
+  for (const item of raw) {
+    if (dims.length >= 8) break
+    const it = (item && typeof item === "object" ? item : {}) as Record<string, unknown>
+    const name = str(it.name)
+    const score = clampScore(it.score)
+    if (!name || score === undefined) continue
+    dims.push({ name, score, comment: str(it.comment) || undefined })
+  }
+  return dims
+}
+
+function normalizeStrengths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((s) => str(s))
+    .filter(Boolean)
+    .slice(0, 6)
+}
+
 function normalizeReport(raw: unknown): AiCheckupReport {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>
   const rawIssues = Array.isArray(obj.issues) ? obj.issues : []
@@ -59,9 +92,18 @@ function normalizeReport(raw: unknown): AiCheckupReport {
     })
   })
 
+  const dimensions = normalizeDimensions(obj.dimensions)
+  // 兜底：模型给了维度分却漏了总分时，用维度均分估算
+  let overallScore = clampScore(obj.overallScore)
+  if (overallScore === undefined && dimensions.length) {
+    overallScore = Math.round(dimensions.reduce((sum, d) => sum + d.score, 0) / dimensions.length)
+  }
+
   return {
     summary: str(obj.summary, issues.length ? `AI 发现 ${issues.length} 个可优化点。` : "AI 未发现明显硬伤。"),
-    overallScore: num(obj.overallScore),
+    overallScore,
+    dimensions,
+    strengths: normalizeStrengths(obj.strengths),
     generatedAt: new Date().toISOString(),
     issues,
   }
@@ -92,14 +134,15 @@ export async function POST(req: Request) {
     {
       role: "system",
       content: [
-        "你是资深招聘顾问与简历编辑专家，正在执行真正的 AI 简历体检。",
+        "你是资深招聘顾问与简历编辑专家，正在执行真正的 AI 简历体检。体检 = 站在 HR/招聘官视角的客观诊断 + 量化评分 + 可落地的优化项。",
         "请基于用户简历结构、文本、样式信息和本地规则提示，输出结构化 JSON。不要输出 Markdown、解释或代码块。",
         "要求：",
         "1. 不要编造用户没有的经历、学校、公司、项目、数字或技能。",
-        "2. 问题要具体，可落地，优先指出影响求职成功率的问题。",
-        "3. 每条 issue 的 prompt 要能直接发给简历编辑 Agent 执行；若需要用户补充事实，就让 Agent 先询问再修改。",
-        "4. issues 尽量覆盖内容完整性、岗位匹配、量化成果、表达清晰度、结构顺序、冗余、样式一致性、联系方式等维度。",
-        "5. 返回 JSON 形状：{\"summary\":\"一句简易摘要\",\"overallScore\":0-100,\"issues\":[{\"id\":\"短id\",\"priority\":\"high|medium|low\",\"category\":\"类别\",\"title\":\"短标题\",\"summary\":\"一句话摘要\",\"detail\":\"完整问题说明\",\"evidence\":\"简历中的证据或位置\",\"suggestion\":\"建议怎么改\",\"prompt\":\"点击让 AI 执行时发送的中文指令\"}]}",
+        "2. 必须给出 overallScore（0-100 的综合得分）以及 dimensions 维度评分。dimensions 固定覆盖这 5 个维度，按此命名：内容完整性、量化成果、岗位匹配、表达清晰、排版样式；每个维度给 0-100 分和一句简短点评 comment。综合分应与维度分、issues 严重度自洽（硬伤多则低分）。",
+        "3. strengths 列出 2-4 条简历真实亮点（无明显亮点可给空数组）。",
+        "4. 问题要具体、可落地，按优先级排序，优先指出影响求职成功率的问题；issues 尽量覆盖内容完整性、岗位匹配、量化成果、表达清晰度、结构顺序、冗余、样式一致性、联系方式等维度。",
+        "5. 每条 issue 的 prompt 要能直接发给简历编辑 Agent 执行；若需要用户补充事实，就让 Agent 先询问再修改。",
+        "6. 返回 JSON 形状：{\"summary\":\"一句话总评\",\"overallScore\":0-100,\"dimensions\":[{\"name\":\"内容完整性\",\"score\":0-100,\"comment\":\"一句点评\"}],\"strengths\":[\"亮点\"],\"issues\":[{\"id\":\"短id\",\"priority\":\"high|medium|low\",\"category\":\"类别\",\"title\":\"短标题\",\"summary\":\"一句话摘要\",\"detail\":\"完整问题说明\",\"evidence\":\"简历中的证据或位置\",\"suggestion\":\"建议怎么改\",\"prompt\":\"点击让 AI 执行时发送的中文指令\"}]}",
       ].join("\n"),
     },
     {

@@ -26,9 +26,19 @@ export interface AiCheckupIssue {
   prompt: string
 }
 
+export interface CheckupDimension {
+  name: string
+  score: number
+  comment?: string
+}
+
 export interface AiCheckupReport {
   summary: string
   overallScore?: number
+  /** 各维度评分（内容完整性 / 量化成果 / 岗位匹配 / 表达清晰 / 排版样式 等） */
+  dimensions: CheckupDimension[]
+  /** 简历亮点 */
+  strengths: string[]
   generatedAt: string
   issues: AiCheckupIssue[]
 }
@@ -160,6 +170,8 @@ export async function runAiCheckup(data: ResumeData, signal?: AbortSignal): Prom
   return {
     summary: payload.summary || "AI 已完成简历体检。",
     overallScore: typeof payload.overallScore === "number" ? payload.overallScore : undefined,
+    dimensions: Array.isArray(payload.dimensions) ? payload.dimensions : [],
+    strengths: Array.isArray(payload.strengths) ? payload.strengths : [],
     generatedAt: payload.generatedAt || new Date().toISOString(),
     issues: Array.isArray(payload.issues) ? payload.issues : [],
   }
