@@ -3,6 +3,8 @@
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { LOCAL_STORAGE_KEY } from "@/types/resume"
 
+const EDIT_PREFETCH_PREFIX = "resume.edit.prefetch."
+
 export type StorageErrorCode =
   | "UNAVAILABLE"
   | "PARSE_ERROR"
@@ -132,4 +134,40 @@ export function loadDefaultTemplate(): Promise<ResumeData | null> {
 
 export function loadExampleTemplate(): Promise<ResumeData | null> {
   return loadTemplate("example")
+}
+
+export function stashResumeForEdit(entry: StoredResume): void {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(`${EDIT_PREFETCH_PREFIX}${entry.id}`, JSON.stringify(entry))
+  } catch {
+    /* ignore prefetch failure */
+  }
+}
+
+export function takeStashedResumeForEdit(id: string): StoredResume | null {
+  if (typeof window === "undefined") return null
+  const key = `${EDIT_PREFETCH_PREFIX}${id}`
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredResume
+    return parsed?.id === id && parsed.resumeData ? parsed : null
+  } catch {
+    try {
+      window.sessionStorage.removeItem(key)
+    } catch {
+      /* ignore cleanup failure */
+    }
+    return null
+  }
+}
+
+export function clearStashedResumeForEdit(id: string): void {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.removeItem(`${EDIT_PREFETCH_PREFIX}${id}`)
+  } catch {
+    /* ignore cleanup failure */
+  }
 }

@@ -6,7 +6,7 @@ import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@iconify/react"
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { getResumeById, updateEntryData } from "@/lib/storage"
+import { clearStashedResumeForEdit, getResumeById, takeStashedResumeForEdit, updateEntryData } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,13 +19,23 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     let cancelled = false
-    setLoaded(false)
+    const prefetched = takeStashedResumeForEdit(id)
+    if (prefetched) {
+      setEntry(prefetched)
+      setLoaded(true)
+    } else {
+      setEntry(null)
+      setLoaded(false)
+    }
     void getResumeById(id)
       .then((resume) => {
-        if (!cancelled) setEntry(resume)
+        if (!cancelled) {
+          setEntry(resume)
+          if (resume) clearStashedResumeForEdit(id)
+        }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!cancelled && !prefetched) {
           toast({
             title: "读取失败",
             description: error instanceof Error ? error.message : "无法读取后台简历",
@@ -67,7 +77,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   }
 
   if (!loaded || !entry) {
-    return <main className="min-h-screen bg-background" />
+    return <EditLoading />
   }
 
   return (
@@ -79,6 +89,17 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         onBack={() => router.push("/resumes")}
         onSave={(data) => handleSave(data)}
       />
+    </main>
+  )
+}
+
+function EditLoading() {
+  return (
+    <main className="min-h-screen bg-background">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-muted-foreground">
+        <Icon icon="mdi:loading" className="agent-spin h-8 w-8" />
+        <span className="text-sm">正在读取简历...</span>
+      </div>
     </main>
   )
 }

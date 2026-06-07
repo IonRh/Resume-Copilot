@@ -1,12 +1,22 @@
 "use client"
 
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react"
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
-import { createEntryFromData, updateEntryData } from "@/lib/storage"
+import { createEntryFromData, stashResumeForEdit, updateEntryData } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
@@ -106,20 +116,39 @@ function CareerInner({
   const analysisPanelRef = useRef<AgentPanelHandle | null>(null)
   const { toast } = useToast()
   const router = useRouter()
+  const [variantDialogOpen, setVariantDialogOpen] = useState(false)
+  const [variantTitle, setVariantTitle] = useState("")
+  const [savingVariant, setSavingVariant] = useState(false)
 
   const { resumeData } = ws
   const kickoff = ws.kickoff
   const hydrated = ws.hydrated
   const turnCount = ws.turns.length
   const setKickoff = ws.setKickoff
+  const defaultVariantTitle = useMemo(
+    () => `${resumeData.title || "我的简历"}（岗位定制版）`,
+    [resumeData.title],
+  )
+
+  const openVariantDialog = useCallback(() => {
+    setVariantTitle(defaultVariantTitle)
+    setVariantDialogOpen(true)
+  }, [defaultVariantTitle])
 
   // 另存为针对该岗位的定制版本（不覆盖原简历）
   const saveAsVariant = useCallback(async () => {
+    const title = variantTitle.trim()
+    if (!title) {
+      toast({ title: "请输入名称", description: "给这份定制简历起个名字后再保存。", variant: "destructive" })
+      return
+    }
+    setSavingVariant(true)
     try {
-      const baseTitle = resumeData.title || "我的简历"
-      const variant: ResumeData = { ...resumeData, title: `${baseTitle}（岗位定制版）` }
+      const variant: ResumeData = { ...resumeData, title }
       const entry = await createEntryFromData(variant)
+      stashResumeForEdit(entry)
       toast({ title: "已另存定制版", description: `「${variant.title}」已保存到我的简历` })
+      setVariantDialogOpen(false)
       router.push(`/edit/${entry.id}`)
     } catch (e) {
       toast({
@@ -127,8 +156,9 @@ function CareerInner({
         description: e instanceof Error ? e.message : "未知错误",
         variant: "destructive",
       })
+      setSavingVariant(false)
     }
-  }, [resumeData, toast, router])
+  }, [resumeData, router, toast, variantTitle])
 
   // 读取 intake 阶段的简报，设置上下文（仅一次）
   useEffect(() => {
@@ -257,7 +287,7 @@ function CareerInner({
             <Button
               size="sm"
               variant="outline"
-              onClick={saveAsVariant}
+              onClick={openVariantDialog}
               className="hidden gap-2 bg-transparent md:inline-flex"
               title="把当前优化结果另存为针对该岗位的定制简历"
             >
@@ -288,6 +318,59 @@ function CareerInner({
         </div>
         <AgentPanel lockedMode={mode} onUserTurnComplete={onInterviewAnswer} />
       </div>
+
+      <Dialog
+        open={variantDialogOpen}
+        onOpenChange={(open) => {
+          if (!savingVariant) setVariantDialogOpen(open)
+        }}
+      >
+        <DialogContent>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveAsVariant()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>命名定制简历</DialogTitle>
+              <DialogDescription>这会创建一份新的简历，不覆盖当前原简历。</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-2">
+              <Label htmlFor="variant-title">简历名称</Label>
+              <Input
+                id="variant-title"
+                value={variantTitle}
+                onChange={(event) => setVariantTitle(event.target.value)}
+                placeholder="例如：孙荣森 - AI 产品经理定制版"
+                autoFocus
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingVariant}
+                onClick={() => setVariantDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button type="submit" className="brand-gradient-bg border-0" disabled={savingVariant || !variantTitle.trim()}>
+                {savingVariant ? (
+                  <>
+                    <Icon icon="mdi:loading" className="agent-spin h-3.5 w-3.5" /> 保存中
+                  </>
+                ) : (
+                  "保存并打开"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
