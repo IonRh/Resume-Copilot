@@ -161,7 +161,7 @@ export interface ResumeData {
 }
 
 /**
- * 本地存储的简历条目结构
+ * 后台存储的简历条目结构
  */
 export interface StoredResume {
   /** 唯一标识（使用 uuid/crypto.randomUUID 生成） */
@@ -174,25 +174,8 @@ export interface StoredResume {
   resumeData: ResumeData
 }
 
-/** 本地存储使用的 Key */
+/** 旧版浏览器存储 Key，仅用于首次迁移到后台存储 */
 export const LOCAL_STORAGE_KEY = "resume.entries"
-
-/**
- * 文件保存/导入的数据结构
- */
-export interface ResumeFile {
-  /** 文件版本 */
-  version: string
-  /** 简历数据 */
-  data: ResumeData
-  /** 文件元数据 */
-  metadata: {
-    /** 导出时间 */
-    exportedAt: string
-    /** 应用版本 */
-    appVersion: string
-  }
-}
 
 /**
  * 编辑器状态类型

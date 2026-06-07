@@ -8,13 +8,6 @@ import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import { createDefaultResumeData } from "@/lib/utils"
 import { loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
-import {
-  bindLocalJsonFile,
-  hasLocalJsonBinding,
-  isLocalJsonPersistenceSupported,
-  saveLocalJsonBackup,
-} from "@/lib/file-backup"
-import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
 import ResumePreview from "@/components/resume-preview"
@@ -82,18 +75,12 @@ function WorkspaceInner({
   onBack,
 }: ResumeWorkspaceProps) {
   const ws = useResumeWorkspace()
-  const { toast } = useToast()
   const isMobile = useIsMobile()
   const [viewMode, setViewMode] = useState<ViewMode>("both")
-  const [jsonBound, setJsonBound] = useState(false)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
-  // 仅客户端可判定的能力（File System Access API）延迟到挂载后再渲染，避免 SSR/CSR 水合不一致
-  const [mounted, setMounted] = useState(false)
   const kickoffReadRef = useRef(false)
 
   const { resumeData, setInitial } = ws
-
-  useEffect(() => setMounted(true), [])
 
   // 主页「求职工具」入口会写入 sessionStorage，进入工作区后自动呼出 AI 并发起对应任务。
   useEffect(() => {
@@ -132,56 +119,6 @@ function WorkspaceInner({
   useEffect(() => {
     onChange?.(resumeData)
   }, [resumeData, onChange])
-
-  // 本地 JSON 绑定状态
-  useEffect(() => {
-    let cancelled = false
-    if (!entryId || !isLocalJsonPersistenceSupported()) {
-      setJsonBound(false)
-      return
-    }
-    void hasLocalJsonBinding(entryId)
-      .then((bound) => {
-        if (!cancelled) setJsonBound(bound)
-      })
-      .catch(() => {
-        if (!cancelled) setJsonBound(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [entryId])
-
-  // 自动同步到本地 JSON
-  useEffect(() => {
-    if (!entryId || !jsonBound) return
-    const timer = window.setTimeout(() => {
-      void saveLocalJsonBackup(entryId, resumeData)
-        .then((saved) => {
-          if (!saved) setJsonBound(false)
-        })
-        .catch((error: unknown) => {
-          const message = error instanceof Error ? error.message : "本地 JSON 自动持久化失败"
-          toast({ title: "JSON 持久化失败", description: message, variant: "destructive" })
-        })
-    }, 1200)
-    return () => window.clearTimeout(timer)
-  }, [entryId, jsonBound, resumeData, toast])
-
-  const handleBindJson = useCallback(async () => {
-    if (!entryId) {
-      toast({ title: "请先保存", description: "新建简历需要先保存一次，才能绑定本地 JSON 文件。" })
-      return
-    }
-    try {
-      const filename = await bindLocalJsonFile(entryId, resumeData)
-      setJsonBound(true)
-      toast({ title: "绑定成功", description: `后续编辑会自动同步到 ${filename}` })
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "绑定本地 JSON 失败"
-      toast({ title: "绑定失败", description: message, variant: "destructive" })
-    }
-  }, [entryId, resumeData, toast])
 
   const agentOpen = ws.agentOpen
   const mobileOverlay = isMobile && agentOpen
@@ -270,18 +207,6 @@ function WorkspaceInner({
             >
               <Icon icon="mdi:content-save" className="h-4 w-4" />
               <span className="hidden sm:inline">保存</span>
-            </Button>
-          ) : null}
-
-          {mounted && isLocalJsonPersistenceSupported() ? (
-            <Button
-              size="sm"
-              variant={jsonBound ? "outline" : "default"}
-              onClick={() => void handleBindJson()}
-              className="hidden gap-2 md:inline-flex"
-            >
-              <Icon icon={jsonBound ? "mdi:file-sync" : "mdi:file-link"} className="h-4 w-4" />
-              {jsonBound ? "已绑定 JSON" : "绑定 JSON"}
             </Button>
           ) : null}
 

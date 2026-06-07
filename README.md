@@ -1,12 +1,12 @@
 ﻿# 简历生成器
 > ⭐⭐⭐ **如果这个项目对您有帮助，请给个小星星！** 您的支持是我持续改进和添加新功能的动力。
 
-一个灵活且功能强大的简历构建和导出工具，帮助用户快速创建、编辑和导出干净、简洁而又专业的简历，支持所见即所得。数据存储在浏览器，本地保存与管理简历更放心。
+一个灵活且功能强大的简历构建和导出工具，帮助用户快速创建、编辑和导出干净、简洁而又专业的简历，支持所见即所得。简历数据由后台统一维护，用户只需要创建、编辑和导出成品。
 
 ## 功能特点
 
-- **用户中心**: 首页集中管理你的简历，支持检索、排序、批量选择与删除、导入/导出
-- **本地存储**: 多份简历持久化到浏览器 `localStorage`，随开随用（支持 JSON 备份还原）
+- **用户中心**: 首页集中管理你的简历，支持检索、排序、批量选择与删除
+- **后台存储**: 多份简历由服务端 API 统一读写，数据维护不暴露给用户
 - **简历编辑**: 直观的界面，轻松编辑个人信息和简历内容
 - **模块化设计**: 支持添加、删除和重排简历模块
 - **实时预览**: 即时查看简历编辑效果
@@ -22,7 +22,7 @@
 </p>
 
 ## 页面示例截图
-1. 用户中心：本地化集中管理多份简历
+1. 用户中心：后台集中管理多份简历
 ![用户中心](./docs/user-center.png)
 
 1. 编辑和预览：随时查看渲染效果
@@ -80,24 +80,25 @@ pnpm build
 ├── app/
 │  ├── globals.css
 │  ├── layout.tsx
-│  ├── page.tsx                         # 首页：用户中心（本地简历管理）
+│  ├── page.tsx                         # 首页：用户中心（后台简历管理）
 │  ├── edit/
 │  │  ├── new/page.tsx                  # 新建简历（可选携带 ?clone=ID 预填）
-│  │  └── [id]/page.tsx                 # 编辑本地已保存的简历
-│  ├── view/[id]/page.tsx               # 仅预览本地已保存的简历
+│  │  └── [id]/page.tsx                 # 编辑后台已保存的简历
+│  ├── view/[id]/page.tsx               # 仅预览后台已保存的简历
 │  ├── pdf/preview/[filename]/page.tsx  # 在线 PDF 预览页（服务端优先，自动降级打印）
 │  ├── print/page.tsx                   # 打印专用页面（供 Chromium 渲染）
 │  ├── auth/page.tsx                    # 访问口令输入页（可选）
 │  └── api/
 │     ├── auth/route.ts                 # 认证接口（设置 Cookie）
 │     ├── image-proxy/route.ts          # 远程图片代理（用于导出防跨域）
+│     ├── resumes/                      # 简历后台存储 API
 │     └── pdf/
 │        ├── health/route.ts            # 健康检查（尝试启动 headless 浏览器）
 │        ├── [filename]/route.ts        # 生成并缓存 PDF（POST→303→GET 下载/预览）
 │        └── route.ts                   # 直接生成并返回 PDF（Puppeteer + Chromium）
 ├── components/
 │  ├── user-center.tsx                  # 用户中心（首页）
-│  ├── export-button.tsx                # 一键导出（PDF/图片/JSON）
+│  ├── export-button.tsx                # 一键导出（PDF/图片）
 │  ├── resume-builder.tsx               # 简历编辑主界面
 │  ├── resume-preview.tsx               # HTML 预览（PDF 与预览同源 HTML/CSS）
 │  ├── print-content.tsx                # 打印内容容器
@@ -107,15 +108,18 @@ pnpm build
 │  ├── use-mobile.ts
 │  └── use-toast.ts
 ├── lib/
-│  ├── utils.ts                         # 通用工具（默认模板、导出工具等）
-│  └── storage.ts                       # 本地存储封装（localStorage）
+│  ├── server/resume-store.ts           # 服务端简历文件仓库
+│  ├── utils.ts                         # 通用工具
+│  └── storage.ts                       # 后台简历 API 客户端
 ├── styles/
 │  ├── globals.css
 │  ├── print.css                        # 打印样式
 │  └── tiptap.css                       # 富文本编辑器样式
+├── data/
+│  ├── templates/                       # 服务端模板数据（不作为静态资源暴露）
+│  └── resumes.json                     # 运行时简历数据（已 gitignore）
 ├── public/
 │  ├── NotoSansSC-Medium.ttf            # 字体（预览/打印共用）
-│  ├── template.json                    # 示例简历数据
 │  └── …
 └── types/
    └── resume.ts
@@ -123,15 +127,6 @@ pnpm build
 
 ## 简历数据
 ```typescript
-export interface ResumeFile {
-  version: string;
-  data: ResumeData;
-  metadata: {
-    exportedAt: string;
-    appVersion: string;
-  };
-}
-
 export interface ResumeData {
   title: string;                     // 简历标题/姓名
   centerTitle?: boolean;             // 标题是否居中
@@ -147,13 +142,12 @@ export interface ResumeData {
 ## 功能说明
 > 基于 [resume-builder](https://github.com/magicyan418/resume-builder) 二次开发，感谢原作者的开源。
 
-### 用户中心与本地存储
+### 用户中心与后台存储
 
-- 首页即用户中心：集中管理本地保存的简历条目
-- 数据存储在浏览器 `localStorage`，纯本地化更放心
-- 操作：新建、编辑、预览、复制（从现有条目预填）、导入与导出、批量选择与删除等
+- 首页即用户中心：集中管理后台保存的简历条目
+- 数据通过 `/api/resumes` 统一读写，运行时落在服务端 `data/resumes.json`
+- 操作：新建、编辑、预览、复制（从现有条目预填）、成品导出、批量选择与删除等
 - 支持按标题搜索、按名称/创建时间/更新时间排序
-- 空间不足时会提示先导出 JSON 做备份再清理
 
 ### 个人信息编辑
 
@@ -192,10 +186,10 @@ export interface ResumeData {
 - 依赖：`puppeteer-core`、`@sparticuz/chromium`（Serverless 友好）。无需打包二进制。
 - 建议在项目设置提升函数超时与内存（如 1024MB/1536MB）。
 
-### 数据导入导出
+### 成品导出
 
-- 在“用户中心”可导入 `.json` 文件；导出支持 JSON、PDF、PNG/JPG/WEBP/SVG 多种格式
-- 编辑页右上角亦内置导出菜单；导出 PDF 默认走服务端，可降级浏览器打印
+- 导出支持 PDF、PNG、JPG、WEBP、SVG 等成品格式
+- 编辑页右上角内置导出菜单；导出 PDF 默认走服务端，可降级浏览器打印
 
 ## 自定义主题
 

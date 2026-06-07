@@ -1,10 +1,10 @@
 "use client"
 
-import { Suspense, useMemo } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import type { ResumeData } from "@/types/resume"
-import { createEntryFromData, StorageError, getResumeById } from "@/lib/storage"
+import { createEntryFromData, getResumeById } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 
 export default function NewEditPage() {
@@ -38,31 +38,52 @@ function NewEditPageContent() {
     }
   }, [])
 
-  // 同步派生克隆数据；在 SSR 阶段返回 undefined，客户端首帧即可拿到
-  const clonedData: ResumeData | undefined = useMemo(() => {
-    if (!cloneId) return undefined
-    if (typeof window === "undefined") return undefined
-    const entry = getResumeById(cloneId)
-    return entry ? { ...entry.resumeData } : undefined
-  }, [cloneId])
+  const [clonedData, setClonedData] = useState<ResumeData | undefined>()
+  const [cloneLoaded, setCloneLoaded] = useState(!cloneId)
+
+  useEffect(() => {
+    if (!cloneId) {
+      setCloneLoaded(true)
+      setClonedData(undefined)
+      return
+    }
+    let cancelled = false
+    setCloneLoaded(false)
+    void getResumeById(cloneId)
+      .then((entry) => {
+        if (!cancelled) setClonedData(entry ? { ...entry.resumeData } : undefined)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast({
+            title: "读取克隆源失败",
+            description: error instanceof Error ? error.message : "无法读取后台简历",
+            variant: "destructive",
+          })
+          setClonedData(undefined)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCloneLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [cloneId, toast])
 
   const handleSave = async (current: ResumeData) => {
     try {
-      const entry = createEntryFromData(current)
+      const entry = await createEntryFromData(current)
       toast({ title: "保存成功", description: `已创建：${entry.resumeData.title}` })
       router.replace(`/edit/${entry.id}`)
     } catch (e: unknown) {
-      if (e instanceof StorageError && e.code === "QUOTA_EXCEEDED") {
-        toast({
-          title: "保存失败：存储空间不足",
-          description: "请删除一些旧的简历，或导出为 JSON 后清理存储。",
-          variant: "destructive",
-        })
-      } else {
-        const message = e instanceof Error ? e.message : "未知错误"
-        toast({ title: "保存失败", description: message, variant: "destructive" })
-      }
+      const message = e instanceof Error ? e.message : "未知错误"
+      toast({ title: "保存失败", description: message, variant: "destructive" })
     }
+  }
+
+  if (!cloneLoaded) {
+    return <main className="min-h-screen bg-background" />
   }
 
   return (

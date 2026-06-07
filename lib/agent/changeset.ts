@@ -64,17 +64,90 @@ function findFirstBlock(content?: JSONContent | null): JSONContent | null {
   return null
 }
 
-function getElementFormatLabel(content?: JSONContent | null): string {
+interface TextStyleSnapshot {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  code: boolean
+  fontSize?: string
+  fontFamily?: string
+  color?: string
+}
+
+const DEFAULT_RENDER_STYLE =
+  "渲染默认样式: 简历标题=16pt/bold; 模块标题=13pt/bold; 模块正文/列表=默认正文(text-sm, 屏幕约14px/10.5pt, 打印/PDF约10pt, 行高1.6, 段/列表间距0.6em或5pt); 个人信息=10pt; 标签=text-xs。若元素样式为 default-body，新增同类内容通常不要在 formats 中手动写 fontSize/fontFamily。"
+
+function getTextStyleSnapshot(node: JSONContent): TextStyleSnapshot | null {
+  if (node.type !== "text") return null
+  const textStyle = node.marks?.find((mark) => mark.type === "textStyle")?.attrs || {}
+  return {
+    bold: Boolean(node.marks?.some((mark) => mark.type === "bold")),
+    italic: Boolean(node.marks?.some((mark) => mark.type === "italic")),
+    underline: Boolean(node.marks?.some((mark) => mark.type === "underline")),
+    code: Boolean(node.marks?.some((mark) => mark.type === "code")),
+    fontSize: typeof textStyle.fontSize === "string" && textStyle.fontSize ? textStyle.fontSize : undefined,
+    fontFamily: typeof textStyle.fontFamily === "string" && textStyle.fontFamily ? textStyle.fontFamily : undefined,
+    color: typeof textStyle.color === "string" && textStyle.color ? textStyle.color : undefined,
+  }
+}
+
+function collectTextStyleSnapshots(content?: JSONContent | null, snapshots: TextStyleSnapshot[] = []): TextStyleSnapshot[] {
+  if (!content || snapshots.length >= 8) return snapshots
+  const snapshot = getTextStyleSnapshot(content)
+  if (snapshot) snapshots.push(snapshot)
+  for (const child of content.content || []) {
+    collectTextStyleSnapshots(child, snapshots)
+    if (snapshots.length >= 8) break
+  }
+  return snapshots
+}
+
+function collectBlockTypes(content?: JSONContent | null, types: Set<string> = new Set()): Set<string> {
+  if (!content) return types
+  if (content.type === "paragraph" || content.type === "heading" || content.type === "bulletList" || content.type === "orderedList") {
+    types.add(content.type)
+  }
+  for (const child of content.content || []) collectBlockTypes(child, types)
+  return types
+}
+
+function styleKey(style: TextStyleSnapshot): string {
+  return [
+    style.bold ? "bold" : "normal",
+    style.italic ? "italic" : "no-italic",
+    style.underline ? "underline" : "no-underline",
+    style.code ? "code" : "no-code",
+    style.fontSize || "default-size",
+    style.fontFamily || "default-font",
+    style.color || "default-color",
+  ].join("|")
+}
+
+function getElementStyleLabel(content?: JSONContent | null): string {
   const firstText = findFirstTextNode(content)
   const firstBlock = findFirstBlock(content)
-  const textStyle = firstText?.marks?.find((mark) => mark.type === "textStyle")?.attrs || {}
   const parts: string[] = []
-  if (firstText?.marks?.some((mark) => mark.type === "bold")) parts.push("bold")
-  if (typeof textStyle.fontSize === "string" && textStyle.fontSize) parts.push(textStyle.fontSize)
-  if (typeof textStyle.fontFamily === "string" && textStyle.fontFamily) parts.push(textStyle.fontFamily)
+  const firstStyle = firstText ? getTextStyleSnapshot(firstText) : null
+  const textStyles = collectTextStyleSnapshots(content)
+  const uniqueStyleCount = new Set(textStyles.map(styleKey)).size
+  const blockTypes = [...collectBlockTypes(content)]
+
+  if (firstStyle?.bold) parts.push("fontWeight=bold")
+  else parts.push("fontWeight=normal")
+  if (firstStyle?.italic) parts.push("italic")
+  if (firstStyle?.underline) parts.push("underline")
+  if (firstStyle?.code) parts.push("code")
+
+  parts.push(firstStyle?.fontSize ? `fontSize=${firstStyle.fontSize}(explicit)` : "fontSize=default-body")
+  parts.push(firstStyle?.fontFamily ? `fontFamily=${firstStyle.fontFamily}(explicit)` : "fontFamily=default-app")
+  if (firstStyle?.color) parts.push(`color=${firstStyle.color}`)
+
   const align = firstBlock?.attrs?.textAlign
-  if (typeof align === "string" && align) parts.push(`align=${align}`)
-  return parts.length ? ` [${parts.join(", ")}]` : ""
+  parts.push(`textAlign=${typeof align === "string" && align ? align : "left"}`)
+  if (blockTypes.length) parts.push(`blocks=${blockTypes.join("+")}`)
+  if (uniqueStyleCount > 1) parts.push(`mixedStyles=${uniqueStyleCount}`)
+
+  return ` style{${parts.join(", ")}}`
 }
 
 /**
@@ -201,6 +274,7 @@ export function buildResumeOutline(data: ResumeData): string {
   const lines: string[] = []
   lines.push(`简历标题: "${data.title}"${data.centerTitle ? "（居中）" : "（左对齐）"}`)
   if (data.themeColor) lines.push(`主题色: ${data.themeColor}`)
+  lines.push(DEFAULT_RENDER_STYLE)
 
   const ji = data.jobIntentionSection
   if (ji?.enabled && ji.items?.length) {
@@ -233,15 +307,15 @@ export function buildResumeOutline(data: ResumeData): string {
         .sort((a, b) => a.order - b.order)
         .forEach((r, ri) => {
           if (r.type === "tags") {
-            lines.push(`      row#${r.id} 标签行: [${(r.tags || []).join(", ")}]`)
+            lines.push(`      row#${r.id} 标签行 style{fontSize=text-xs, pill, wrap}: [${(r.tags || []).join(", ")}]`)
           } else {
-            lines.push(`      row#${r.id} ${r.columns}列:`)
+            lines.push(`      row#${r.id} ${r.columns}列 layout{grid=${r.columns}列, columnGap=0.75rem, rowGap=0.6em}:`)
             r.elements
               .slice()
               .sort((a, b) => a.columnIndex - b.columnIndex)
               .forEach((e) => {
                 const text = docToText(e.content).replace(/\n/g, " ⏎ ")
-                lines.push(`        element#${e.id} (列${e.columnIndex})${getElementFormatLabel(e.content)}: "${text}"`)
+                lines.push(`        element#${e.id} (列${e.columnIndex})${getElementStyleLabel(e.content)}: "${text}"`)
               })
           }
           void ri

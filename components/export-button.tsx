@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@iconify/react";
 import type { ResumeData } from "@/types/resume";
-import { generatePdfFilename, exportToMagicyanFile, downloadFile, cn } from "@/lib/utils";
+import { generatePdfFilename, cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -308,26 +308,6 @@ export function ExportButton({
     }, 5000); // 5秒超时
   };
 
-  const exportAsJSON = () => {
-    try {
-      const fileContent = exportToMagicyanFile(resumeData);
-      const filename = generatePdfFilename(resumeData.title || "").replace(".pdf", ".json");
-      downloadFile(fileContent, filename, "application/json");
-      toast({
-        title: "导出成功",
-        description: `简历已导出为 JSON 格式`,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : JSON.stringify(e || {});
-      console.error("导出 JSON 失败:", msg);
-      toast({
-        title: "导出失败",
-        description: `导出 JSON 时发生错误：${msg}`,
-        variant: "destructive",
-      });
-    }
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -349,10 +329,6 @@ export function ExportButton({
         <DropdownMenuItem onClick={exportAsPDF}>
           <Icon icon="mdi:file-pdf-box" className="w-4 h-4 mr-2" />
           PDF 格式
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={exportAsJSON}>
-          <Icon icon="mdi:code-json" className="w-4 h-4 mr-2" />
-          JSON 格式
         </DropdownMenuItem>
         {showImageOptions && (
           <>

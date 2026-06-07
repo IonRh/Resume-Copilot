@@ -7,7 +7,6 @@ import { Separator } from "@/components/ui/separator"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, updateEntryData } from "@/lib/storage"
-import { saveLocalJsonBackup } from "@/lib/file-backup"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
@@ -95,6 +94,7 @@ const InterviewAnalysisPanel = forwardRef<AgentPanelHandle, {
 function CareerInner({
   mode,
   entryId,
+  initialData,
   onBack,
   briefing,
   analysisStorageKey,
@@ -114,12 +114,11 @@ function CareerInner({
   const setKickoff = ws.setKickoff
 
   // 另存为针对该岗位的定制版本（不覆盖原简历）
-  const saveAsVariant = useCallback(() => {
+  const saveAsVariant = useCallback(async () => {
     try {
       const baseTitle = resumeData.title || "我的简历"
       const variant: ResumeData = { ...resumeData, title: `${baseTitle}（岗位定制版）` }
-      const entry = createEntryFromData(variant)
-      void saveLocalJsonBackup(entry.id, entry.resumeData).catch(() => false)
+      const entry = await createEntryFromData(variant)
       toast({ title: "已另存定制版", description: `「${variant.title}」已保存到我的简历` })
       router.push(`/edit/${entry.id}`)
     } catch (e) {
@@ -171,12 +170,9 @@ function CareerInner({
       return
     }
     const timer = window.setTimeout(() => {
-      try {
-        const updated = updateEntryData(entryId, resumeData)
-        void saveLocalJsonBackup(entryId, updated.resumeData).catch(() => false)
-      } catch {
+      void updateEntryData(entryId, resumeData).catch(() => {
         /* 持久化失败不阻塞使用 */
-      }
+      })
     }, 1200)
     return () => window.clearTimeout(timer)
   }, [entryId, resumeData])

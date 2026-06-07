@@ -508,7 +508,7 @@ function TurnView({
 function AssistantText({ content, streaming }: { content: string; streaming: boolean }) {
   return (
     <div className="agent-bubble agent-bubble-assistant">
-      {streaming ? <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div> : <Markdown content={content} />}
+      <Markdown content={content} />
       {streaming ? <span className="ml-0.5 inline-block animate-pulse">▋</span> : null}
     </div>
   )

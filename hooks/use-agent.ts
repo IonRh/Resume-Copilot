@@ -203,7 +203,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
               role: "tool",
               tool_call_id: call.id,
               name: call.function.name,
-              content: result.message.slice(0, isReadonly ? 6000 : 1200),
+              content: result.message.slice(0, isReadonly ? 12000 : 1200),
             })
           }
         }

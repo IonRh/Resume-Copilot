@@ -16,8 +16,21 @@ export default function ViewPage({ params }: { params: Promise<{ id: string }> }
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    setEntry(getResumeById(id))
-    setLoaded(true)
+    let cancelled = false
+    setLoaded(false)
+    void getResumeById(id)
+      .then((resume) => {
+        if (!cancelled) setEntry(resume)
+      })
+      .catch(() => {
+        if (!cancelled) setEntry(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   if (loaded && !entry) {

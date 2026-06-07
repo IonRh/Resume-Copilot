@@ -11,8 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
 import type { StoredResume } from "@/types/resume"
-import { importFromMagicyanFile } from "@/lib/utils"
-import { StorageError, createEntryFromData, deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
+import { deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
 import { createDefaultResumeData } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import ExportButton from "@/components/export-button"
@@ -31,22 +30,34 @@ export default function UserCenter() {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview" }>({
     open: false,
     mode: "jd",
   })
 
   const refresh = useCallback(() => {
-    try {
-      setItems(getAllResumes())
-    } catch (e) {
-      toast({ title: "读取失败", description: e instanceof Error ? e.message : "无法读取本地存储" })
+    let cancelled = false
+    setLoading(true)
+    void getAllResumes()
+      .then((list) => {
+        if (!cancelled) setItems(list)
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          toast({ title: "读取失败", description: e instanceof Error ? e.message : "无法读取后台简历" })
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
   }, [toast])
 
   useEffect(() => {
-    refresh()
+    return refresh()
   }, [refresh])
 
   // 轻量预取新建/示例模板，提升后续进入编辑页的首屏速度
@@ -148,7 +159,7 @@ export default function UserCenter() {
   const openTool = useCallback(
     (prompt: string) => {
       if (!mostRecent) {
-        toast({ title: "还没有简历", description: "请先创建或导入一份简历，再使用求职工具。" })
+        toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
         return
       }
       try {
@@ -165,7 +176,7 @@ export default function UserCenter() {
   const openIntake = useCallback(
     (mode: "jd" | "interview") => {
       if (!mostRecent) {
-        toast({ title: "还没有简历", description: "请先创建或导入一份简历，再使用求职工具。" })
+        toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
         return
       }
       setIntake({ open: true, mode })
@@ -173,41 +184,9 @@ export default function UserCenter() {
     [mostRecent, toast],
   )
 
-  const handleImport: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const handleDelete = async (ids: string[]) => {
     try {
-      if (!file.name.endsWith(".json")) {
-        toast({ title: "文件格式错误", description: "请选择 .json 格式的文件", variant: "destructive" })
-        return
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        toast({ title: "文件过大", description: "文件大小不能超过 5MB", variant: "destructive" })
-        return
-      }
-      setImporting(true)
-      const content = await file.text()
-      const data = importFromMagicyanFile(content)
-      const entry = createEntryFromData(data)
-      toast({ title: "导入成功", description: `已导入：${entry.resumeData.title}` })
-      refresh()
-      // Do not auto-navigate; user can choose next action
-    } catch (e: unknown) {
-      if (e instanceof StorageError && e.code === "QUOTA_EXCEEDED") {
-        toast({ title: "存储空间不足", description: "请删除旧简历或先导出为 JSON 后再清理。", variant: "destructive" })
-      } else {
-        const message = e instanceof Error ? e.message : "文件解析或保存失败"
-        toast({ title: "导入失败", description: message, variant: "destructive" })
-      }
-    } finally {
-      setImporting(false)
-      event.target.value = ""
-    }
-  }
-
-  const handleDelete = (ids: string[]) => {
-    try {
-      deleteResumes(ids)
+      await deleteResumes(ids)
       toast({ title: "删除成功", description: `已删除 ${ids.length} 条简历` })
       setSelected(new Set())
       refresh()
@@ -218,9 +197,6 @@ export default function UserCenter() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* 统一隐藏文件输入，空态也可使用 */}
-      <input id="uc-import-file" type="file" accept=".json" className="hidden" onChange={handleImport} />
-
       {/* AI 求职工具路口 */}
       <div className="p-4 pb-0">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -287,14 +263,6 @@ export default function UserCenter() {
             />
             {null}
             <Separator orientation="vertical" className="h-6" />
-            <Button
-              variant="default"
-              className="gap-2"
-              onClick={() => document.getElementById("uc-import-file")?.click()}
-              disabled={importing}
-            >
-              <Icon icon="mdi:import" className="w-4 h-4" /> 导入
-            </Button>
             <Button onClick={handleCreate} className="gap-2">
               <Icon icon="mdi:plus" className="w-4 h-4" /> 创建简历
             </Button>
@@ -325,7 +293,9 @@ export default function UserCenter() {
             <span className="text-sm text-muted-foreground">已选 {selected.size} 项</span>
           </div>
         )}
-        {filteredSorted.length === 0 ? (
+        {loading ? (
+          <div className="py-16 text-center text-sm text-muted-foreground">正在读取简历...</div>
+        ) : filteredSorted.length === 0 ? (
           <div className="py-16">
             <div className="mx-auto max-w-xl text-center rounded-xl border bg-muted/30 p-10 shadow-sm">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -333,18 +303,10 @@ export default function UserCenter() {
               </div>
               <h3 className="text-xl font-semibold">暂无简历</h3>
               <div className="mt-2 inline-flex flex-col items-stretch">
-                <p className="text-sm text-muted-foreground">点击“创建简历”开始，或从 JSON 文件导入已有数据并继续编辑</p>
+                <p className="text-sm text-muted-foreground">点击“创建简历”开始，后台会自动保存你的简历数据</p>
                 <div className="mt-6 flex items-center justify-between">
                   <Button onClick={handleCreate} className="gap-2 shrink-0">
                     <Icon icon="mdi:plus" className="w-4 h-4" /> 创建简历
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="gap-2 shrink-0"
-                    onClick={() => document.getElementById("uc-import-file")?.click()}
-                    disabled={importing}
-                  >
-                    <Icon icon="mdi:import" className="w-4 h-4" /> 导入
                   </Button>
                   <Button
                     variant="outline"
@@ -450,7 +412,7 @@ export default function UserCenter() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除所选简历？</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作不可撤销，建议先导出重要的简历数据为 JSON 文件保存。
+              此操作不可撤销，删除后后台将不再保留这些简历。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

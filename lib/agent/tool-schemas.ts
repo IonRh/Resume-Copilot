@@ -20,7 +20,7 @@ export interface ToolSchema {
 const columnFormatsSchema = {
   type: "array",
   description:
-    "各列富文本格式，可选。用于让新增内容匹配简历样式，例如项目标题列加粗。数组下标对应 texts 的列下标。",
+    "各列富文本格式，可选。用于让新增内容匹配简历样式，例如项目标题列加粗。数组下标对应 texts 的列下标；若 get_resume 显示相邻同类内容为 default-body，通常省略 fontSize/fontFamily。",
   items: {
     type: "object",
     properties: {
@@ -109,7 +109,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     type: "function",
     function: {
       name: "get_resume",
-      description: "读取当前简历的完整结构大纲（含各模块/行/元素的 id 与文本）。在做任何修改前，若不确定 id 或内容，应先调用本工具。",
+      description:
+        "读取当前简历的完整结构与样式大纲（含各模块/行/元素的 id、文本、列数、字号、字体、加粗、对齐、块类型与默认渲染样式提示）。在做任何修改前，若不确定 id、内容或样式，应先调用本工具。",
       parameters: { type: "object", properties: {} },
     },
   },

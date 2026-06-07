@@ -21,8 +21,26 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
   const isValidMode = VALID_MODES.includes(mode as CareerMode)
 
   useEffect(() => {
-    if (isValidMode) setEntry(getResumeById(id))
-    setLoaded(true)
+    let cancelled = false
+    setLoaded(false)
+    if (!isValidMode) {
+      setEntry(null)
+      setLoaded(true)
+      return
+    }
+    void getResumeById(id)
+      .then((resume) => {
+        if (!cancelled) setEntry(resume)
+      })
+      .catch(() => {
+        if (!cancelled) setEntry(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [id, isValidMode])
 
   if (loaded && (!isValidMode || !entry)) {

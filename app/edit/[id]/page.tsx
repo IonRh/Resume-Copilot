@@ -6,8 +6,7 @@ import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@iconify/react"
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { getResumeById, updateEntryData, StorageError } from "@/lib/storage"
-import { saveLocalJsonBackup } from "@/lib/file-backup"
+import { getResumeById, updateEntryData } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,26 +18,38 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    setEntry(getResumeById(id))
-    setLoaded(true)
-  }, [id])
+    let cancelled = false
+    setLoaded(false)
+    void getResumeById(id)
+      .then((resume) => {
+        if (!cancelled) setEntry(resume)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast({
+            title: "读取失败",
+            description: error instanceof Error ? error.message : "无法读取后台简历",
+            variant: "destructive",
+          })
+          setEntry(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, toast])
 
   const handleSave = async (data: ResumeData) => {
     try {
-      const updated = updateEntryData(id, data)
-      await saveLocalJsonBackup(id, updated.resumeData).catch(() => false)
+      const updated = await updateEntryData(id, data)
+      setEntry(updated)
       toast({ title: "保存成功", description: new Date(updated.updatedAt).toLocaleString() })
     } catch (e: unknown) {
-      if (e instanceof StorageError && e.code === "QUOTA_EXCEEDED") {
-        toast({
-          title: "保存失败：存储空间不足",
-          description: "请删除一些旧的简历，或导出为 JSON 文件后清理存储。",
-          variant: "destructive",
-        })
-      } else {
-        const message = e instanceof Error ? e.message : "未知错误"
-        toast({ title: "保存失败", description: message, variant: "destructive" })
-      }
+      const message = e instanceof Error ? e.message : "未知错误"
+      toast({ title: "保存失败", description: message, variant: "destructive" })
     }
   }
 

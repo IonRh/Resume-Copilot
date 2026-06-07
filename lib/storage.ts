@@ -1,6 +1,5 @@
 "use client"
 
-import { importFromMagicyanFile, validateResumeData } from "@/lib/utils"
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { LOCAL_STORAGE_KEY } from "@/types/resume"
 
@@ -8,6 +7,7 @@ export type StorageErrorCode =
   | "UNAVAILABLE"
   | "PARSE_ERROR"
   | "QUOTA_EXCEEDED"
+  | "UNAUTHORIZED"
   | "UNKNOWN"
 
 export class StorageError extends Error {
@@ -19,141 +19,117 @@ export class StorageError extends Error {
   }
 }
 
-function ensureClient() {
-  if (typeof window === "undefined") {
-    throw new StorageError("只能在浏览器环境中访问本地存储", "UNAVAILABLE")
+async function readPayload<T>(res: Response): Promise<T> {
+  const payload = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) {
+    const code: StorageErrorCode = res.status === 401 ? "UNAUTHORIZED" : "UNKNOWN"
+    throw new StorageError(payload.error || `后台请求失败：${res.status}`, code)
   }
+  return payload
 }
 
-function readAll(): StoredResume[] {
-  ensureClient()
+async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(input, {
+      ...init,
+      headers: {
+        ...(init?.body ? { "content-type": "application/json" } : undefined),
+        ...init?.headers,
+      },
+      cache: "no-store",
+    })
+  } catch (error) {
+    throw new StorageError(error instanceof Error ? error.message : "无法连接后台存储", "UNAVAILABLE")
+  }
+  return readPayload<T>(res)
+}
+
+function readLegacyLocalResumes(): StoredResume[] {
+  if (typeof window === "undefined") return []
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as StoredResume[]
-    if (!Array.isArray(parsed)) return []
-    return parsed
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    throw new StorageError("读取本地存储失败，数据格式错误", "PARSE_ERROR")
+    return []
   }
 }
 
-function writeAll(list: StoredResume[]) {
-  ensureClient()
-  try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list))
-  } catch (e: unknown) {
-    // Safari throws DOMException with code 22, Firefox: 1014, Chrome name: QuotaExceededError
-    const isQuota = (() => {
-      if (typeof e === "object" && e !== null) {
-        const maybe: { name?: unknown; code?: unknown } = e as Record<string, unknown>
-        const name = typeof maybe.name === "string" ? maybe.name : undefined
-        const code = typeof maybe.code === "number" ? maybe.code : undefined
-        return name === "QuotaExceededError" || code === 22 || code === 1014
-      }
-      return false
-    })()
-    if (isQuota) {
-      throw new StorageError("存储容量已满", "QUOTA_EXCEEDED")
+async function migrateLegacyLocalResumes(): Promise<StoredResume[]> {
+  const legacy = readLegacyLocalResumes()
+  if (legacy.length === 0) return []
+
+  const migrated: StoredResume[] = []
+  for (const entry of legacy) {
+    if (!entry?.resumeData) continue
+    migrated.push(await createEntryFromData(entry.resumeData))
+  }
+
+  if (migrated.length > 0 && typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY)
+    } catch {
+      /* ignore cleanup failure */
     }
-    throw new StorageError("写入本地存储失败", "UNKNOWN")
   }
+  return migrated
 }
 
-export function getAllResumes(): StoredResume[] {
-  return readAll()
+export async function getAllResumes(): Promise<StoredResume[]> {
+  const payload = await request<{ resumes: StoredResume[] }>("/api/resumes")
+  if (payload.resumes.length > 0) return payload.resumes
+  const migrated = await migrateLegacyLocalResumes()
+  return migrated.length > 0 ? migrated : payload.resumes
 }
 
-export function getResumeById(id: string): StoredResume | null {
-  return readAll().find((r) => r.id === id) || null
-}
-
-export function upsertResume(entry: StoredResume): StoredResume {
-  const list = readAll()
-  const idx = list.findIndex((r) => r.id === entry.id)
-  if (idx >= 0) list[idx] = entry
-  else list.unshift(entry)
-  writeAll(list)
-  return entry
-}
-
-export function deleteResumes(ids: string[]): void {
-  const set = new Set(ids)
-  const next = readAll().filter((r) => !set.has(r.id))
-  writeAll(next)
-}
-
-export function createEntryFromData(data: ResumeData): StoredResume {
-  const now = new Date().toISOString()
-  const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-
-  // Ensure timestamps in data align with entry
-  const normalized: ResumeData = {
-    ...data,
-    createdAt: data.createdAt || now,
-    updatedAt: now,
-  }
-
-  const { isValid, errors } = validateResumeData(normalized)
-  if (!isValid) {
-    throw new StorageError(`简历数据校验失败：${errors.join("；")}`)
-  }
-
-  const entry: StoredResume = {
-    id,
-    createdAt: now,
-    updatedAt: now,
-    resumeData: normalized,
-  }
-  upsertResume(entry)
-  return entry
-}
-
-export function updateEntryData(id: string, data: ResumeData): StoredResume {
-  const list = readAll()
-  const idx = list.findIndex((r) => r.id === id)
-  if (idx < 0) throw new StorageError("未找到对应的简历条目")
-
-  const now = new Date().toISOString()
-  const merged: ResumeData = {
-    ...data,
-    createdAt: list[idx].resumeData.createdAt || list[idx].createdAt,
-    updatedAt: now,
-  }
-
-  const { isValid, errors } = validateResumeData(merged)
-  if (!isValid) {
-    throw new StorageError(`简历数据校验失败：${errors.join("；")}`)
-  }
-
-  const updated: StoredResume = {
-    ...list[idx],
-    updatedAt: now,
-    resumeData: merged,
-  }
-  list[idx] = updated
-  writeAll(list)
-  return updated
-}
-
-async function loadTemplateFrom(path: string): Promise<ResumeData | null> {
+export async function getResumeById(id: string): Promise<StoredResume | null> {
   try {
-    const res = await fetch(path)
-    if (!res.ok) return null
-    const content = await res.text()
-    const data = importFromMagicyanFile(content)
-    return data
+    const payload = await request<{ resume: StoredResume }>(`/api/resumes/${encodeURIComponent(id)}`)
+    return payload.resume
+  } catch (error) {
+    if (error instanceof StorageError && error.message.includes("未找到")) return null
+    throw error
+  }
+}
+
+export async function createEntryFromData(data: ResumeData): Promise<StoredResume> {
+  const payload = await request<{ resume: StoredResume }>("/api/resumes", {
+    method: "POST",
+    body: JSON.stringify({ resumeData: data }),
+  })
+  return payload.resume
+}
+
+export async function updateEntryData(id: string, data: ResumeData): Promise<StoredResume> {
+  const payload = await request<{ resume: StoredResume }>(`/api/resumes/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ resumeData: data }),
+  })
+  return payload.resume
+}
+
+export async function deleteResumes(ids: string[]): Promise<void> {
+  await request<{ deleted: number }>("/api/resumes", {
+    method: "DELETE",
+    body: JSON.stringify({ ids }),
+  })
+}
+
+async function loadTemplate(type: "default" | "example"): Promise<ResumeData | null> {
+  try {
+    const payload = await request<{ resumeData: ResumeData }>(`/api/resumes/template?type=${type}`)
+    return payload.resumeData
   } catch {
     return null
   }
 }
 
 export function loadDefaultTemplate(): Promise<ResumeData | null> {
-  return loadTemplateFrom("/template.json")
+  return loadTemplate("default")
 }
 
 export function loadExampleTemplate(): Promise<ResumeData | null> {
-  return loadTemplateFrom("/example.json")
+  return loadTemplate("example")
 }

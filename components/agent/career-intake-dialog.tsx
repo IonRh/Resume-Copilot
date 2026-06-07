@@ -158,7 +158,7 @@ export default function CareerIntakeDialog({
     setMessages((m) => [...m, { role: "user", content: text }])
     historyRef.current.push({ role: "user", content: text })
 
-    const entry = getResumeById(id)
+    const entry = await getResumeById(id)
     const outline = entry ? buildResumeOutline(entry.resumeData) : "（暂无法读取简历结构）"
     const system: ChatMessage = { role: "system", content: intake.system(outline) }
 
