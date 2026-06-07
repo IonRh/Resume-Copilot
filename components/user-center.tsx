@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
+import { createEntryFromData, deleteResumes, getAllResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
 import { createDefaultResumeData } from "@/lib/utils"
 import {
   getResumeParentId,
@@ -227,6 +227,7 @@ export default function UserCenter() {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [intake, setIntake] = useState<{ open: boolean; mode: "jd" | "interview" }>({
     open: false,
@@ -350,7 +351,30 @@ export default function UserCenter() {
   }
 
   const handleCreate = () => {
+    setCreateOpen(true)
+  }
+
+  // 从零开始：沿用空白模板编辑器流程
+  const handleCreateFromScratch = () => {
+    setCreateOpen(false)
     void prefetchAndOpenNew("default")
+  }
+
+  // 先和 AI 聊聊：立即创建一份处于对话创建阶段的简历，并绑定唯一会话进入对话页
+  const handleCreateWithAI = async () => {
+    setCreateOpen(false)
+    try {
+      const tpl = await loadDefaultTemplate()
+      const data: ResumeData = { ...(tpl ?? createDefaultResumeData()), buildMode: true }
+      const entry = await createEntryFromData(data)
+      router.push(`/create/${entry.id}`)
+    } catch (e) {
+      toast({
+        title: "创建失败",
+        description: e instanceof Error ? e.message : "未知错误",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleClone = (id: string) => {
@@ -663,9 +687,15 @@ export default function UserCenter() {
                             <Icon icon="mdi:eye" className="w-4 h-4" /> 查看
                           </Button>
                           <ExportButton resumeData={parent.resumeData} variant="ghost" />
-                          <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${parent.id}`)}>
-                            <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
-                          </Button>
+                          {parent.resumeData.buildMode ? (
+                            <Button variant="ghost" className="gap-2" onClick={() => router.push(`/create/${parent.id}`)}>
+                              <Icon icon="mdi:robot-happy-outline" className="w-4 h-4" /> 继续聊聊
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${parent.id}`)}>
+                              <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
+                            </Button>
+                          )}
                           <Button variant="ghost" className="gap-2" onClick={() => handleCreateVariant(parent.id)}>
                             <Icon icon="mdi:file-tree" className="w-4 h-4" /> JD 子版
                           </Button>
@@ -731,9 +761,15 @@ export default function UserCenter() {
                               <Icon icon="mdi:eye" className="w-4 h-4" /> 查看
                             </Button>
                             <ExportButton resumeData={it.resumeData} variant="ghost" />
-                            <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${it.id}`)}>
-                              <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
-                            </Button>
+                            {it.resumeData.buildMode ? (
+                              <Button variant="ghost" className="gap-2" onClick={() => router.push(`/create/${it.id}`)}>
+                                <Icon icon="mdi:robot-happy-outline" className="w-4 h-4" /> 继续聊聊
+                              </Button>
+                            ) : (
+                              <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${it.id}`)}>
+                                <Icon icon="mdi:pencil" className="w-4 h-4" /> 编辑
+                              </Button>
+                            )}
                             <Button variant="ghost" className="gap-2" onClick={() => handleClone(it.id)}>
                               <Icon icon="mdi:content-copy" className="w-4 h-4" /> 克隆
                             </Button>
@@ -764,6 +800,42 @@ export default function UserCenter() {
         defaultResumeId={mostRecent?.id}
         onOpenChange={(o) => setIntake((s) => ({ ...s, open: o }))}
       />
+
+      {/* 创建简历：选择创建方式 */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>创建简历</DialogTitle>
+            <DialogDescription>选择一种方式开始，后台会自动保存你的简历数据。</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleCreateFromScratch}
+              className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40"
+            >
+              <span className="grid h-11 w-11 place-items-center rounded-lg bg-muted text-primary">
+                <Icon icon="mdi:file-document-outline" className="h-6 w-6" />
+              </span>
+              <span className="text-sm font-semibold">从零开始</span>
+              <span className="text-xs text-muted-foreground">打开空白模板，自己动手逐项填写与排版。</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCreateWithAI()}
+              className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40"
+            >
+              <span className="brand-gradient-bg grid h-11 w-11 place-items-center rounded-lg">
+                <Icon icon="mdi:robot-happy-outline" className="h-6 w-6" />
+              </span>
+              <span className="text-sm font-semibold">先和 AI 聊聊</span>
+              <span className="text-xs text-muted-foreground">和创建助手对话，由 AI 引导你从零搭建整份简历。</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* AI 简历润色：先选择简历 */}
       <Dialog open={polishDialogOpen} onOpenChange={setPolishDialogOpen}>

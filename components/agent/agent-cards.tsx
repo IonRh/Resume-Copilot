@@ -320,6 +320,43 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
   )
 }
 
+/** 面板内可折叠的关键词分组：默认折叠，仅显示计数；展开后显示紧凑 chip */
+function KeywordGroup({
+  label,
+  kind,
+  keywords,
+  recentSet,
+  defaultOpen = false,
+}: {
+  label: string
+  kind: "matched" | "missing"
+  keywords: string[]
+  recentSet?: Set<string>
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  if (!keywords.length) return null
+  return (
+    <div className="jd-kw-group" data-open={open ? "1" : undefined}>
+      <button className="jd-kw-toggle" onClick={() => setOpen((o) => !o)}>
+        <span className="jd-kw-dot" data-kind={kind} />
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground">{keywords.length}</span>
+        <Icon icon="mdi:chevron-down" className={`jd-kw-chevron h-3.5 w-3.5 ${open ? "is-open" : ""}`} />
+      </button>
+      {open ? (
+        <div className="jd-kw-chips">
+          {keywords.map((k) => (
+            <span key={k} className="kw-chip" data-kind={kind} data-just={recentSet?.has(k) ? "1" : undefined}>
+              {k}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * 常驻 JD 匹配面板：贯穿整个会话，展示最新匹配度（含分数变化）、关键词覆盖进度
  * 以及可逐条落地、带完成状态的优化清单。数据源为 workspace 级 ws.jdMatch。
@@ -328,10 +365,13 @@ export function JdMatchPanel({
   onApply,
   onRescore,
   rescoring,
+  onClose,
 }: {
   onApply: (prompt: string) => void
   onRescore?: () => void
   rescoring?: boolean
+  /** 作为浮层使用时：头部按钮变为「收起浮层」 */
+  onClose?: () => void
 }) {
   const ws = useResumeWorkspace()
   const match = ws.jdMatch
@@ -383,156 +423,119 @@ export function JdMatchPanel({
   }
 
   const recentSet = new Set(recentlyCovered)
+  const showBody = onClose ? true : !collapsed
 
   return (
     <div className="jd-panel">
       <div className="jd-panel-head">
-        <div className="flex items-center gap-1.5 text-sm font-semibold">
-          <Icon icon="mdi:target" className="h-4 w-4 text-primary" /> JD 匹配
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="score-ring jd-ring" style={{ ["--val" as string]: String(card.matchScore) }}>
+            {card.matchScore}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold">JD 匹配度</span>
+              {delta != null && delta !== 0 ? (
+                <span className={`jd-delta ${delta > 0 ? "is-up" : "is-down"}`}>
+                  <Icon icon={delta > 0 ? "mdi:arrow-up" : "mdi:arrow-down"} className="h-3 w-3" />
+                  {delta > 0 ? `+${delta}` : delta}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              覆盖 {matched.length}/{totalKw} · 清单 {doneSug}/{totalSug}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           {onRescore ? (
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 gap-1 px-1.5 text-[11px]"
+              className="h-7 w-7 p-0"
               onClick={onRescore}
               disabled={rescoring}
               title="基于当前简历重新评估匹配度"
             >
               <Icon
                 icon={rescoring ? "mdi:loading" : "mdi:refresh"}
-                className={`h-3.5 w-3.5 ${rescoring ? "agent-spin" : ""}`}
+                className={`h-4 w-4 ${rescoring ? "agent-spin" : ""}`}
               />
-              {rescoring ? "评分中" : "重新评分"}
             </Button>
           ) : null}
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 w-6 p-0"
-            onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "展开" : "收起"}
+            className="h-7 w-7 p-0"
+            onClick={() => (onClose ? onClose() : setCollapsed((c) => !c))}
+            title={onClose ? "收起" : collapsed ? "展开" : "收起"}
           >
-            <Icon icon={collapsed ? "mdi:chevron-down" : "mdi:chevron-up"} className="h-4 w-4" />
+            <Icon
+              icon={onClose ? "mdi:chevron-up" : collapsed ? "mdi:chevron-down" : "mdi:chevron-up"}
+              className="h-4 w-4"
+            />
           </Button>
         </div>
       </div>
 
-      <div className="jd-panel-summary">
-        <div className="score-ring" style={{ ["--val" as string]: String(card.matchScore) }}>
-          {card.matchScore}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">匹配度</span>
-            {delta != null && delta !== 0 ? (
-              <span className={`jd-delta ${delta > 0 ? "is-up" : "is-down"}`}>
-                <Icon icon={delta > 0 ? "mdi:arrow-up" : "mdi:arrow-down"} className="h-3 w-3" />
-                {delta > 0 ? `+${delta}` : delta}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>关键词覆盖 {matched.length}/{totalKw}</span>
-            <span>{coverage}%</span>
-          </div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="brand-gradient-bg h-full rounded-full transition-all" style={{ width: `${coverage}%` }} />
-          </div>
-        </div>
+      <div className="jd-coverage-bar">
+        <div className="brand-gradient-bg h-full rounded-full transition-all" style={{ width: `${coverage}%` }} />
       </div>
 
-      {!collapsed ? (
+      {showBody ? (
         <>
-          {matched.length ? (
-            <div className="jd-panel-block">
-              <div className="jd-panel-label">已覆盖</div>
-              <div className="flex flex-wrap gap-1">
-                {matched.map((k) => (
-                  <span key={k} className="kw-chip" data-kind="matched" data-just={recentSet.has(k) ? "1" : undefined}>
-                    <Icon icon="mdi:check" className="h-3 w-3" />
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {missing.length ? (
-            <div className="jd-panel-block">
-              <div className="jd-panel-label">缺失/建议补充</div>
-              <div className="flex flex-wrap gap-1">
-                {missing.map((k) => (
-                  <span key={k} className="kw-chip" data-kind="missing">
-                    <Icon icon="mdi:plus" className="h-3 w-3" />
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <div className="jd-kw-row">
+            <KeywordGroup label="已覆盖" kind="matched" keywords={matched} recentSet={recentSet} />
+            <KeywordGroup label="待补充" kind="missing" keywords={missing} defaultOpen />
+          </div>
 
           {totalSug ? (
-            <div className="jd-panel-block">
-              <div className="jd-panel-label flex items-center justify-between">
-                <span>优化清单</span>
-                <span className="text-muted-foreground">已处理 {doneSug}/{totalSug}</span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {activeSuggestions.map((s, i) => {
-                  const applied = s.status === "applied"
-                  return (
-                    <div key={s.id || i} className="jd-sug" data-status={s.status || "pending"}>
-                      <div className="flex items-start gap-1.5">
-                        <Icon
-                          icon={applied ? "mdi:check-circle" : "mdi:circle-outline"}
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                          style={{ color: applied ? "var(--brand-via)" : undefined }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium">{s.section}</div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">{s.advice}</p>
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {s.targetIds?.length ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 gap-1 bg-transparent text-[11px]"
-                                onClick={() => locate(s.targetIds as string[])}
-                              >
-                                <Icon icon="mdi:crosshairs-gps" className="h-3 w-3" /> 定位
-                              </Button>
-                            ) : null}
-                            {s.prompt ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 gap-1 bg-transparent text-[11px]"
-                                onClick={() => apply(s)}
-                              >
-                                <Icon icon={applied ? "mdi:refresh" : "mdi:auto-fix"} className="h-3 w-3" />
-                                {applied ? "再次应用" : "让 AI 应用"}
-                              </Button>
-                            ) : null}
-                            {!applied && s.id ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
-                                onClick={() => ws.setSuggestionStatus(s.id as string, "dismissed")}
-                                title="从清单中忽略"
-                              >
-                                <Icon icon="mdi:close" className="h-3 w-3" /> 忽略
-                              </Button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
+            <div className="jd-list">
+              {activeSuggestions.map((s, i) => {
+                const applied = s.status === "applied"
+                return (
+                  <div key={s.id || i} className="jd-sug" data-status={s.status || "pending"}>
+                    <Icon
+                      icon={applied ? "mdi:check-circle" : "mdi:circle-outline"}
+                      className="jd-sug-icon"
+                      style={{ color: applied ? "var(--brand-via)" : undefined }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="jd-sug-title">{s.section}</div>
+                      <p className="jd-sug-advice">{s.advice}</p>
                     </div>
-                  )
-                })}
-              </div>
+                    <div className="jd-sug-actions">
+                      {s.targetIds?.length ? (
+                        <button
+                          className="jd-icon-btn"
+                          onClick={() => locate(s.targetIds as string[])}
+                          title="定位到简历"
+                        >
+                          <Icon icon="mdi:crosshairs-gps" className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                      {s.prompt ? (
+                        <button
+                          className="jd-icon-btn jd-icon-btn-primary"
+                          onClick={() => apply(s)}
+                          title={applied ? "再次应用" : "让 AI 应用"}
+                        >
+                          <Icon icon={applied ? "mdi:refresh" : "mdi:auto-fix"} className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                      {!applied && s.id ? (
+                        <button
+                          className="jd-icon-btn"
+                          onClick={() => ws.setSuggestionStatus(s.id as string, "dismissed")}
+                          title="从清单中忽略"
+                        >
+                          <Icon icon="mdi:close" className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : null}
         </>

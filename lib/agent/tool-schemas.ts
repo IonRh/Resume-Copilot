@@ -597,6 +597,26 @@ export const EDIT_TOOL_SCHEMAS = pickTools([
   "replace_resume",
 ])
 
+/** 创建助手：从零搭建简历，挂载全部编辑类工具 */
+export const BUILD_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "update_element_text",
+  "update_title",
+  "update_module",
+  "add_module",
+  "remove_module",
+  "reorder_modules",
+  "add_row",
+  "add_rows",
+  "remove_row",
+  "set_row_tags",
+  "set_personal_info",
+  "set_job_intention",
+  "set_layout",
+  "set_theme_color",
+  "replace_resume",
+])
+
 export const SCORE_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_score_report",

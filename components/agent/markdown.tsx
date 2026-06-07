@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, type ReactNode } from "react"
+import { Fragment, useMemo, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -240,9 +240,14 @@ function parseBlocks(src: string): ReactNode[] {
     }
     blocks.push(
       <p key={key++} className="my-1 leading-relaxed">
-        {para.flatMap((l, idx) =>
-          idx === 0 ? renderInline(l) : [<br key={`br${idx}`} />, ...renderInline(l)],
-        )}
+        {para.map((l, idx) => (
+          // 每行包一层带唯一 key 的 Fragment：renderInline 内部 key 从 0 重新计数，
+          // 直接平铺会让多行的内联元素出现重复 key（如两个 key="0"）。
+          <Fragment key={idx}>
+            {idx === 0 ? null : <br />}
+            {renderInline(l)}
+          </Fragment>
+        ))}
       </p>,
     )
   }

@@ -7,6 +7,7 @@ import { executeTool, READONLY_TOOLS } from "@/lib/agent/tools"
 import { buildSystemPrompt, JD_RESCORE_INSTRUCTION } from "@/lib/agent/prompts"
 import { streamChat } from "@/lib/agent/stream"
 import {
+  BUILD_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
   INTERVIEWER_TOOL_SCHEMAS,
@@ -24,6 +25,8 @@ const ANALYSIS_MAX_STREAM_CHARS = 3500
 
 function toolsForMode(mode: AgentMode) {
   switch (mode) {
+    case "build":
+      return BUILD_TOOL_SCHEMAS
     case "score":
       return SCORE_TOOL_SCHEMAS
     case "jd":

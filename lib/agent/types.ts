@@ -195,7 +195,7 @@ export interface ChatMessage {
 }
 
 /** Agent 顶部模式 */
-export type AgentMode = "edit" | "score" | "jd" | "interview" | "interviewAnalysis"
+export type AgentMode = "edit" | "score" | "jd" | "interview" | "interviewAnalysis" | "build"
 
 /** 工具执行结果 */
 export interface ToolResult {

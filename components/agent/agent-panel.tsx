@@ -66,6 +66,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   const [input, setInput] = useState("")
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
+  const [jdOpen, setJdOpen] = useState(false)
   const [mention, setMention] = useState<{ active: boolean; query: string; index: number }>({
     active: false,
     query: "",
@@ -76,6 +77,9 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   const kickoffSent = useRef(false)
   const lastAcceptedRef = useRef<number | null>(null)
   const rescoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const jdBtnRef = useRef<HTMLButtonElement | null>(null)
+  const jdPopRef = useRef<HTMLDivElement | null>(null)
+  const jdHistoryLenRef = useRef<number | null>(null)
 
   // 锁定模式（专注页）直接采用 lockedMode；编辑器内只在 edit / score 间切换，残留的 jd/interview 归一到 edit。
   const panelMode: AgentMode = lockedMode ?? (ws.mode === "score" ? "score" : "edit")
@@ -115,6 +119,36 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     if (rescoreTimerRef.current) clearTimeout(rescoreTimerRef.current)
   }, [])
 
+  // JD 匹配浮层：点击浮层与触发按钮以外区域时关闭
+  useEffect(() => {
+    if (!jdOpen) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (jdPopRef.current?.contains(target)) return
+      if (jdBtnRef.current?.contains(target)) return
+      setJdOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [jdOpen])
+
+  // 离开 JD 模式或匹配数据清空时，关闭浮层
+  useEffect(() => {
+    if (panelMode !== "jd" || !ws.jdMatch) setJdOpen(false)
+  }, [panelMode, ws.jdMatch])
+
+  // 每生成一版新的匹配结果（首轮分析或重新评分）自动弹出一次浮层；刷新恢复历史不弹。
+  const jdHistoryLen = ws.jdMatch?.history.length ?? 0
+  useEffect(() => {
+    if (panelMode !== "jd") return
+    if (jdHistoryLenRef.current === null) {
+      jdHistoryLenRef.current = jdHistoryLen
+      return
+    }
+    if (jdHistoryLen > jdHistoryLenRef.current) setJdOpen(true)
+    jdHistoryLenRef.current = jdHistoryLen
+  }, [jdHistoryLen, panelMode])
+
   const modules = ws.resumeData.modules
   const mentionMatches = useMemo(() => {
     if (!mention.active) return []
@@ -138,7 +172,8 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     kickoffSent.current = true
     const prompt = ws.kickoff
     ws.setKickoff(null)
-    void send(prompt)
+    // JD 模式：用一句人话替代暴露内部 present_jd_match 指令的气泡
+    void send(prompt, panelMode === "jd" ? { displayText: "开始分析我与目标岗位的匹配度" } : undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.kickoff, running])
 
@@ -223,7 +258,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     >
       <div className="agent-panel">
         {!hideSessionControls ? (
-          <div className="agent-session-bar">
+          <div className="agent-session-bar relative">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="h-8 gap-1.5 bg-transparent text-xs">
@@ -248,6 +283,35 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {panelMode === "jd" && ws.jdMatch ? (
+              <button
+                ref={jdBtnRef}
+                className="jd-trigger"
+                data-open={jdOpen ? "1" : undefined}
+                onClick={() => setJdOpen((o) => !o)}
+                title="查看 JD 匹配分析"
+              >
+                <Icon icon="mdi:target" className="h-3.5 w-3.5 text-primary" />
+                <span>JD 匹配</span>
+                <span className="jd-trigger-score">{ws.jdMatch.current.matchScore}</span>
+                <Icon
+                  icon="mdi:chevron-down"
+                  className={`h-3.5 w-3.5 transition-transform ${jdOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+            ) : null}
+
+            {panelMode === "jd" && ws.jdMatch && jdOpen ? (
+              <div ref={jdPopRef} className="jd-pop">
+                <JdMatchPanel
+                  onApply={(p) => submit(p)}
+                  onRescore={rescore}
+                  rescoring={rescoring}
+                  onClose={() => setJdOpen(false)}
+                />
+              </div>
+            ) : null}
 
             <Button
               size="sm"
@@ -278,11 +342,6 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               </Button>
             ) : null}
           </div>
-        ) : null}
-
-        {/* JD 常驻匹配面板：贯穿整个会话，分数/关键词/清单随修改演进 */}
-        {panelMode === "jd" && ws.jdMatch ? (
-          <JdMatchPanel onApply={(p) => submit(p)} onRescore={rescore} rescoring={rescoring} />
         ) : null}
 
         {/* 消息区 */}
@@ -317,6 +376,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                 turn={turn}
                 onApply={(p) => submit(p)}
                 onRetry={running ? undefined : retry}
+                hideJdCards={panelMode === "jd"}
               />
             ))
           )}
@@ -386,7 +446,13 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                 detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
               }}
               onKeyDown={onKeyDown}
-              placeholder={lockedMode === "interview" ? "输入你的回答，面试官会继续追问" : "描述你的需求，如「润色工作经历」（@ 引用模块）"}
+              placeholder={
+                lockedMode === "interview"
+                  ? "输入你的回答，面试官会继续追问"
+                  : lockedMode === "build"
+                    ? ""
+                    : "描述你的需求，如「润色工作经历」（@ 引用模块）"
+              }
               rows={2}
               className="max-h-32 w-full resize-none bg-transparent text-sm outline-none"
             />
@@ -452,10 +518,13 @@ function TurnView({
   turn,
   onApply,
   onRetry,
+  hideJdCards = false,
 }: {
   turn: AgentTurn
   onApply: (prompt: string) => void
   onRetry?: () => void
+  /** JD 专注页：常驻面板已展示匹配卡片，聊天流里的 jd 卡片应隐藏避免重复 */
+  hideJdCards?: boolean
 }) {
   if (turn.role === "user") {
     return (
@@ -491,7 +560,9 @@ function TurnView({
           if (part.type === "change") return <DiffCard key={part.id} changeId={part.changeId} />
           if (part.type === "card") {
             const card = turn.cards?.[part.cardIndex]
-            return card ? <AgentCardView key={part.id} card={card} onApply={onApply} /> : null
+            if (!card) return null
+            if (hideJdCards && card.type === "jd") return null
+            return <AgentCardView key={part.id} card={card} onApply={onApply} />
           }
           return null
         })
@@ -522,7 +593,9 @@ function TurnView({
           ) : null}
 
           {turn.cards?.length
-            ? turn.cards.map((card, i) => <AgentCardView key={i} card={card} onApply={onApply} />)
+            ? turn.cards
+                .filter((card) => !(hideJdCards && card.type === "jd"))
+                .map((card, i) => <AgentCardView key={i} card={card} onApply={onApply} />)
             : null}
         </>
       )}
