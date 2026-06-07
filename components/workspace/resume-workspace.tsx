@@ -13,6 +13,7 @@ import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
 import ResumePreview from "@/components/resume-preview"
 import ExportButton from "@/components/export-button"
 import EditorPanel from "./editor-panel"
+import CheckupAssistant from "./checkup-assistant"
 import AgentPanel from "@/components/agent/agent-panel"
 import type { WorkspaceSelection } from "@/lib/agent/types"
 
@@ -198,6 +199,8 @@ function WorkspaceInner({
               <Icon icon={editorCollapsed ? "mdi:dock-left" : "mdi:dock-window"} className="h-4 w-4" />
             </Button>
           ) : null}
+
+          <CheckupAssistant />
 
           {onSave ? (
             <Button

@@ -12,6 +12,27 @@ export interface CheckupIssue {
   prompt: string
 }
 
+export type AiCheckupPriority = "high" | "medium" | "low"
+
+export interface AiCheckupIssue {
+  id: string
+  priority: AiCheckupPriority
+  category: string
+  title: string
+  summary: string
+  detail: string
+  evidence?: string
+  suggestion: string
+  prompt: string
+}
+
+export interface AiCheckupReport {
+  summary: string
+  overallScore?: number
+  generatedAt: string
+  issues: AiCheckupIssue[]
+}
+
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/
 const PHONE_RE = /(?:\+?\d[\d\s-]{6,}\d)/
 const PLACEHOLDER_RE = /(请输入|示例|placeholder|lorem|待填写|xxx)/i
@@ -123,4 +144,23 @@ export function runCheckup(data: ResumeData): CheckupIssue[] {
   }
 
   return issues
+}
+
+export async function runAiCheckup(data: ResumeData, signal?: AbortSignal): Promise<AiCheckupReport> {
+  const res = await fetch("/api/agent/checkup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ resumeData: data }),
+    signal,
+  })
+  const payload = (await res.json().catch(() => ({}))) as AiCheckupReport & { error?: string; detail?: string }
+  if (!res.ok) {
+    throw new Error(payload.error || payload.detail || `体检失败（${res.status}）`)
+  }
+  return {
+    summary: payload.summary || "AI 已完成简历体检。",
+    overallScore: typeof payload.overallScore === "number" ? payload.overallScore : undefined,
+    generatedAt: payload.generatedAt || new Date().toISOString(),
+    issues: Array.isArray(payload.issues) ? payload.issues : [],
+  }
 }

@@ -410,7 +410,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     type: "function",
     function: {
       name: "present_jd_match",
-      description: "展示简历与目标岗位 JD 的匹配分析卡片。每条建议可附带 prompt，用户点击后会让你执行该项修改。",
+      description:
+        "展示简历与目标岗位 JD 的匹配分析卡片。每条建议应尽量附带 prompt 和 targetIds；用户点击「定位」会滚动并高亮对应简历位置，点击应用会让你执行该项修改。",
       parameters: {
         type: "object",
         properties: {
@@ -429,7 +430,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
                 targetIds: {
                   type: "array",
                   items: { type: "string" },
-                  description: "该建议涉及的简历元素 id（element/row/module），用户点击「定位」会滚动并高亮这些元素",
+                  description:
+                    "该建议涉及的简历元素/行/模块纯 id。必须使用 get_resume 里 element#、row#、module# 后面的 id，不要带 element#/row#/module# 前缀。",
                 },
               },
               required: ["section", "advice"],

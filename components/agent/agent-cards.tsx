@@ -13,19 +13,44 @@ import type {
   ToolStep,
 } from "@/lib/agent/types"
 
+const targetIdPattern = /^(?:element|row|module)#([^\s,，)）;；]+)/i
+
+function normalizeTargetId(id: string): string {
+  const value = id.trim()
+  const prefixed = value.match(targetIdPattern)
+  return prefixed?.[1] || value.replace(/^(?:element|row|module)#/i, "")
+}
+
+function normalizeTargetIds(ids: string[]): string[] {
+  return [...new Set(ids.map(normalizeTargetId).filter(Boolean))]
+}
+
+function attrValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+}
+
+function findPreviewTarget(id: string): Element | null {
+  if (typeof document === "undefined") return null
+  const root = document.querySelector(".rw-preview") || document
+  const value = attrValue(normalizeTargetId(id))
+  const element = root.querySelector(`[data-element-id="${value}"]`)
+  if (element) return element
+  const row = root.querySelector(`[data-row-id="${value}"]`)
+  if (row) return row
+  const module = root.querySelector(`[data-module-id="${value}"]`)
+  return module?.querySelector('[data-role="module-title"]') || module
+}
+
 /** 滚动并高亮简历预览中的目标元素（依赖预览的 data-* 属性） */
-function locateInPreview(ids: string[]) {
-  if (typeof document === "undefined" || ids.length === 0) return
+function locateInPreview(ids: string[]): boolean {
+  if (ids.length === 0) return false
   for (const id of ids) {
-    const el =
-      document.querySelector(`[data-element-id="${id}"]`) ||
-      document.querySelector(`[data-row-id="${id}"]`) ||
-      document.querySelector(`[data-module-id="${id}"]`)
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" })
-      return
-    }
+    const el = findPreviewTarget(id)
+    if (!el) continue
+    el.scrollIntoView({ behavior: "smooth", block: "center" })
+    return true
   }
+  return false
 }
 
 /** 词级差异渲染：删除红色删除线，新增绿色 */
@@ -205,8 +230,11 @@ export function ScoreCard({ card }: { card: ScoreCardType }) {
 export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: string) => void }) {
   const ws = useResumeWorkspace()
   const locate = (ids: string[]) => {
-    ws.setHighlight(ids)
-    locateInPreview(ids)
+    const normalizedIds = normalizeTargetIds(ids)
+    if (!normalizedIds.length) return
+    ws.setHighlight([])
+    window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
+    locateInPreview(normalizedIds)
   }
   return (
     <div className="analysis-card">

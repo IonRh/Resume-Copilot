@@ -29,6 +29,12 @@ const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : 
 const bool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v : undefined)
 const int = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined
+const targetIdPattern = /^(?:element|row|module)#([^\s,，)）;；]+)/i
+const normalizeTargetId = (id: string): string => {
+  const value = id.trim()
+  const prefixed = value.match(targetIdPattern)
+  return prefixed?.[1] || value.replace(/^(?:element|row|module)#/i, "")
+}
 
 interface RowSpec {
   type?: "rich" | "tags"
@@ -752,7 +758,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
             section: str(o.section),
             advice: str(o.advice),
             prompt: str(o.prompt) || undefined,
-            targetIds: Array.isArray(o.targetIds) ? o.targetIds.map(String) : undefined,
+            targetIds: Array.isArray(o.targetIds) ? o.targetIds.map(String).map(normalizeTargetId).filter(Boolean) : undefined,
           }
         }),
       }

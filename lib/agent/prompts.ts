@@ -93,7 +93,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     tagline: "岗位匹配 · 关键词对齐",
     icon: "mdi:target",
     guide:
-      "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。每条建议尽量附带可执行 prompt，并在 targetIds 中填写该建议涉及的简历元素 id（element/row/module，可先用 get_resume 获取），以便用户点击「定位」滚动高亮到对应位置。用户确认后再用 update_element_text 等工具落地修改。",
+      "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须先调用 get_resume 读取结构，再调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。每条建议尽量附带可执行 prompt，并在 targetIds 中填写该建议涉及的简历元素/行/模块纯 id（使用 get_resume 里 element#、row#、module# 后面的 id，不要带 element#/row#/module# 前缀），以便用户点击「定位」滚动高亮到对应位置。用户确认后再用 update_element_text 等工具落地修改。",
     suggestions: ["对照 JD 分析匹配度", "把缺失关键词自然融入工作经历", "按该岗位重排我的项目顺序"],
     intake: {
       title: "JD 匹配优化",

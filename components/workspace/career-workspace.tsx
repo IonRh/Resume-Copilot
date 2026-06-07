@@ -112,6 +112,8 @@ function CareerInner({
   const ws = useResumeWorkspace()
   const profile = AGENT_PROFILES[mode]
   const briefingReadRef = useRef(false)
+  const briefingRef = useRef(briefing || "")
+  const freshJdSessionRef = useRef(false)
   const skipFirstSaveRef = useRef(true)
   const analysisPanelRef = useRef<AgentPanelHandle | null>(null)
   const { toast } = useToast()
@@ -124,6 +126,10 @@ function CareerInner({
   const kickoff = ws.kickoff
   const hydrated = ws.hydrated
   const turnCount = ws.turns.length
+  const newSession = ws.newSession
+  const setAgentOpen = ws.setAgentOpen
+  const setJd = ws.setJd
+  const setMode = ws.setMode
   const setKickoff = ws.setKickoff
   const defaultVariantTitle = useMemo(
     () => `${resumeData.title || "我的简历"}（岗位定制版）`,
@@ -167,15 +173,20 @@ function CareerInner({
     ws.setMode(mode)
     ws.setAgentOpen(true)
     if (analysisStorageKey) ws.clearSelection()
-    if (briefing) ws.setJd(briefing)
-    else {
+    if (briefing) {
+      briefingRef.current = briefing
+      ws.setJd(briefing)
+    } else {
       try {
         const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
         if (raw) {
           const parsed = JSON.parse(raw) as { mode?: string; resumeId?: string; briefing?: string }
           if (parsed.mode === mode && parsed.resumeId === entryId) {
             window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
-            if (parsed.briefing) ws.setJd(parsed.briefing)
+            if (parsed.briefing) {
+              briefingRef.current = parsed.briefing
+              ws.setJd(parsed.briefing)
+            }
           }
         }
       } catch {
@@ -185,12 +196,24 @@ function CareerInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
+  // JD 定制每次进入都开一个干净会话，避免串入上一次岗位分析上下文。
   useEffect(() => {
-    if (!hydrated || turnCount > 0 || kickoff) return
+    if (mode !== "jd" || !hydrated || freshJdSessionRef.current) return
+    freshJdSessionRef.current = true
+    newSession("jd")
+    setMode("jd")
+    setAgentOpen(true)
+    if (briefingRef.current) setJd(briefingRef.current)
     const prompt = profile.intake?.initialPrompt
     if (prompt) setKickoff(prompt)
-  }, [hydrated, kickoff, profile.intake?.initialPrompt, setKickoff, turnCount])
+  }, [hydrated, mode, newSession, profile.intake?.initialPrompt, setAgentOpen, setJd, setKickoff, setMode])
+
+  // 非 JD 专注页只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
+  useEffect(() => {
+    if (mode === "jd" || !hydrated || turnCount > 0 || kickoff) return
+    const prompt = profile.intake?.initialPrompt
+    if (prompt) setKickoff(prompt)
+  }, [hydrated, kickoff, mode, profile.intake?.initialPrompt, setKickoff, turnCount])
 
   // 接受 AI 优化后自动回写到该简历，避免丢失（跳过首挂载的空写）
   useEffect(() => {

@@ -5,6 +5,14 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 // Avoid Radix Avatar/Checkbox to prevent extra deps; use basic elements
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +27,9 @@ import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
 
 type SortKey = "name" | "createdAt" | "updatedAt"
 type SortDir = "asc" | "desc"
+
+const POLISH_PROMPT =
+  "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。"
 
 export default function UserCenter() {
   const router = useRouter()
@@ -35,6 +46,8 @@ export default function UserCenter() {
     open: false,
     mode: "jd",
   })
+  const [polishDialogOpen, setPolishDialogOpen] = useState(false)
+  const [polishResumeId, setPolishResumeId] = useState<string | undefined>(undefined)
 
   const refresh = useCallback(() => {
     let cancelled = false
@@ -155,21 +168,43 @@ export default function UserCenter() {
     [items],
   )
 
-  // 求职工具入口：把待办指令写入 sessionStorage，进入工作区后自动呼出 AI 并发起任务
-  const openTool = useCallback(
-    (prompt: string) => {
+  const resumeChoices = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+    [items],
+  )
+
+  const openPolishDialog = useCallback(
+    () => {
       if (!mostRecent) {
         toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
         return
       }
+      setPolishResumeId(mostRecent.id)
+      setPolishDialogOpen(true)
+    },
+    [mostRecent, toast],
+  )
+
+  // 简历润色入口：先选简历，再把待办指令写入 sessionStorage 并进入工作区
+  const startPolish = useCallback(
+    () => {
+      const id = polishResumeId || mostRecent?.id
+      if (!id) {
+        toast({ title: "请选择简历", description: "选择一份简历后再进入润色。" })
+        return
+      }
       try {
-        sessionStorage.setItem("agent-kickoff", JSON.stringify({ prompt }))
+        sessionStorage.setItem("agent-kickoff", JSON.stringify({ prompt: POLISH_PROMPT }))
       } catch {
         /* sessionStorage 不可用时仍正常进入编辑页 */
       }
-      router.push(`/edit/${mostRecent.id}`)
+      setPolishDialogOpen(false)
+      router.push(`/edit/${id}`)
     },
-    [mostRecent, router, toast],
+    [mostRecent?.id, polishResumeId, router, toast],
   )
 
   // JD 匹配 / 模拟面试：先经「选简历 + 对话收集」模态框，再进入专注工作台
@@ -204,11 +239,8 @@ export default function UserCenter() {
             {
               icon: "mdi:auto-fix",
               title: "AI 简历润色",
-              desc: "通读最近简历，逐句润色并量化成果",
-              action: () =>
-                openTool(
-                  "请通读我的简历，先给出整体优化建议，再针对每段经历逐句润色，突出量化成果与影响，所有改动用 diff 形式给我确认。",
-                ),
+              desc: "先选择简历，再逐句润色并量化成果",
+              action: openPolishDialog,
             },
             {
               icon: "mdi:target",
@@ -405,6 +437,65 @@ export default function UserCenter() {
         defaultResumeId={mostRecent?.id}
         onOpenChange={(o) => setIntake((s) => ({ ...s, open: o }))}
       />
+
+      {/* AI 简历润色：先选择简历 */}
+      <Dialog open={polishDialogOpen} onOpenChange={setPolishDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              startPolish()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>选择要润色的简历</DialogTitle>
+              <DialogDescription>进入对应简历工作区后，AI 会自动开始整体润色。</DialogDescription>
+            </DialogHeader>
+
+            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {resumeChoices.map((it) => {
+                const active = polishResumeId === it.id
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                      active
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/40"
+                    }`}
+                    onClick={() => setPolishResumeId(it.id)}
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
+                      <Icon icon="mdi:file-document-edit-outline" className="h-4 w-4 text-primary" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{it.resumeData.title || "未命名"}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        更新于 {new Date(it.updatedAt).toLocaleString()}
+                      </span>
+                    </span>
+                    <Icon
+                      icon={active ? "mdi:radiobox-marked" : "mdi:radiobox-blank"}
+                      className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPolishDialogOpen(false)}>
+                取消
+              </Button>
+              <Button type="submit" className="brand-gradient-bg border-0" disabled={!polishResumeId}>
+                <Icon icon="mdi:auto-fix" className="h-4 w-4" /> 进入润色
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* 删除确认 */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

@@ -557,10 +557,19 @@ export default function ResumePreview({
                       <div
                         key={row.id}
                         data-row-id={row.id}
-                        className="grid gap-3 items-center"
+                        className={`grid gap-3 items-center ${selClass(row.id)}`}
                         style={{
                           gridTemplateColumns: `repeat(${row.columns}, 1fr)`,
                         }}
+                        onClick={(e) =>
+                          pick(e, {
+                            kind: "row",
+                            id: row.id,
+                            moduleId: module.id,
+                            label: `「${module.title}」· 第${rowIdx + 1}行`,
+                            text: row.elements.map((element) => docToText(element.content)).join("\n"),
+                          })
+                        }
                       >
                         {row.elements.map((element) => {
                           const label = `「${module.title}」· 第${rowIdx + 1}行 · 第${element.columnIndex + 1}列`
