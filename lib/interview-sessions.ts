@@ -1,6 +1,6 @@
 "use client"
 
-import type { InterviewSessionRecord, InterviewSessionStatus } from "@/types/interview-session"
+import type { InterviewRoundHandoff, InterviewSessionRecord, InterviewSessionStatus } from "@/types/interview-session"
 import {
   composeInterviewBriefing,
   extractJobBriefing,
@@ -12,6 +12,25 @@ import {
 
 const STORAGE_KEY = "interview.sessions.v1"
 const INTERVIEWER_STORAGE_PREFIX = "resume.career.interview."
+
+function composeHandoffBriefingBlock(handoff: InterviewRoundHandoff): string {
+  return [
+    "【上一轮面试官交接评价】",
+    `来源：${handoff.fromRoundLabel}`,
+    "",
+    handoff.content.trim(),
+    "",
+    "【下一轮使用方式】",
+    "请把以上交接评价作为内部上下文：优先验证风险与疑点，避免向候选人直接透露上一轮具体评价原文。",
+  ].join("\n")
+}
+
+function stripHandoffBriefingBlocks(briefing: string): string {
+  const marker = "【上一轮面试官交接评价】"
+  const index = briefing.indexOf(marker)
+  if (index < 0) return briefing.trim()
+  return briefing.slice(0, index).trim()
+}
 
 function readAll(): InterviewSessionRecord[] {
   if (typeof window === "undefined") return []
@@ -172,11 +191,14 @@ export function deleteInterviewSessionStorage(resumeId: string, sessionId: strin
   }
 }
 
-export function createNextRoundSession(parent: InterviewSessionRecord): InterviewSessionRecord | null {
+export function createNextRoundSession(
+  parent: InterviewSessionRecord,
+  handoff?: InterviewRoundHandoff,
+): InterviewSessionRecord | null {
   const nextRound = getNextRound(parent.roundId)
   if (!nextRound) return null
 
-  let jobBriefing = parent.jobBriefing?.trim() || ""
+  let jobBriefing = stripHandoffBriefingBlocks(parent.jobBriefing?.trim() || "")
   if (!jobBriefing && typeof window !== "undefined") {
     try {
       const raw = window.localStorage.getItem(interviewerStorageKey(parent.resumeId, parent.id))
@@ -196,7 +218,10 @@ export function createNextRoundSession(parent: InterviewSessionRecord): Intervie
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const now = new Date().toISOString()
-  const briefing = composeInterviewBriefing(nextRound, jobBriefing)
+  const jobBriefingWithHandoff = handoff
+    ? [jobBriefing, composeHandoffBriefingBlock(handoff)].filter(Boolean).join("\n\n")
+    : jobBriefing
+  const briefing = composeInterviewBriefing(nextRound, jobBriefingWithHandoff)
 
   const record: InterviewSessionRecord = {
     id: sessionId,
@@ -206,9 +231,10 @@ export function createNextRoundSession(parent: InterviewSessionRecord): Intervie
     title: parent.title,
     roundId: nextRound.id,
     roundLabel: nextRound.label,
-    jobBriefing,
+    jobBriefing: jobBriefingWithHandoff,
     briefingPreview: briefing.slice(0, 300),
     previousSessionId: parent.id,
+    handoff,
     playMode: parent.playMode || "practice",
     status: "in_progress",
     createdAt: now,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
@@ -9,15 +9,7 @@ import { getStoredCampaignReport, listReportReadyCampaigns } from "@/lib/intervi
 
 export default function InterviewReportHall() {
   const router = useRouter()
-  const [campaigns, setCampaigns] = useState(listReportReadyCampaigns())
-
-  const refresh = useCallback(() => {
-    setCampaigns(listReportReadyCampaigns())
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const [campaigns] = useState(() => listReportReadyCampaigns())
 
   return (
     <div className="min-h-screen bg-background">
@@ -28,7 +20,7 @@ export default function InterviewReportHall() {
           </span>
           <div>
             <h1 className="text-lg font-semibold">面试报告大厅</h1>
-            <p className="text-xs text-muted-foreground">五轮均已完成后，可为每次投递生成综合报告</p>
+            <p className="text-xs text-muted-foreground">完成或关闭的模拟面试，都可以沉淀为复盘报告</p>
           </div>
         </div>
         <Button variant="outline" className="gap-2 bg-transparent" onClick={() => router.push("/interviews")}>
@@ -40,9 +32,9 @@ export default function InterviewReportHall() {
         {campaigns.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
             <Icon icon="mdi:clipboard-text-clock-outline" className="mx-auto h-10 w-10 text-primary" />
-            <h2 className="mt-4 text-base font-semibold">还没有可生成报告的投递</h2>
+            <h2 className="mt-4 text-base font-semibold">还没有可复盘的投递</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              完成 HR 面、技术面、场景面、行为面、Leader 面各至少一场后，会出现在这里。
+              完成任意一场模拟面试，或真实模拟被关闭后，会出现在这里。
             </p>
           </div>
         ) : (
@@ -65,7 +57,7 @@ export default function InterviewReportHall() {
                   onClick={() => router.push(`/interviews/report/${campaign.campaignId}`)}
                 >
                   <Icon icon="mdi:file-chart-outline" className="h-4 w-4" />
-                  {stored ? "查看报告" : "选择记录并生成"}
+                  {stored ? "查看报告" : "选择记录生成"}
                 </Button>
               </div>
             )

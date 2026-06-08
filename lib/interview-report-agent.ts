@@ -7,8 +7,8 @@ import type { CampaignReportPicks, FullInterviewReport } from "@/types/interview
 import type { InterviewSessionRecord } from "@/types/interview-session"
 
 const REPORT_AGENT_SYSTEM = [
-  "你是「面试报告分析师」，负责把用户完成的五轮模拟面试记录整理成一份完整、可展示的面试报告。",
-  "你会收到五轮面试的问答与分析记录，以及目标岗位背景。",
+  "你是「面试报告分析师」，负责把用户选定的模拟面试记录整理成一份完整、可展示的复盘报告。",
+  "你会收到一轮或多轮面试的问答与分析记录，以及目标岗位背景。",
   "",
   "工作要求：",
   "1. 仔细阅读每一轮的用户回答与已有分析，给出客观、具体、可行动的评价。",
@@ -20,7 +20,7 @@ const REPORT_AGENT_SYSTEM = [
   "   - logic / 逻辑思维",
   "   - communication / 沟通表达",
   "   - business / 业务理解",
-  "4. rounds 必须覆盖全部 5 轮，roundId 依次为 hr、technical、scenario、behavioral、leader。",
+  "4. rounds 只覆盖用户实际选定的轮次，roundId 必须与输入记录保持一致。",
   "5. 每轮 questions 需保留用户原回答要点，evaluation 要指出亮点与不足；referenceAnswer 给可复述的改进版。",
   "6. starRating 为 1-5 星，与回答质量对应。",
   "7. suggestions 给 3-5 条改进建议，可附推荐学习资源。",
@@ -51,10 +51,14 @@ export async function generateCampaignReport(args: {
   signal?: AbortSignal
 }): Promise<FullInterviewReport> {
   const input = buildReportInput(args.picks, args.campaignSessions)
-  const roundOrder = INTERVIEW_ROUNDS.map((round) => `- ${round.id}: ${round.label}`).join("\n")
+  const selectedRoundIds = new Set(input.rounds.map((round) => round.roundId))
+  const roundOrder = INTERVIEW_ROUNDS
+    .filter((round) => selectedRoundIds.has(round.id))
+    .map((round) => `- ${round.id}: ${round.label}`)
+    .join("\n")
 
   const userContent = [
-    "请基于以下五轮模拟面试记录生成完整报告。",
+    "请基于以下模拟面试记录生成复盘报告。",
     "",
     `【目标岗位 / 背景】`,
     input.jobBriefing || input.title,

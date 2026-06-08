@@ -4,6 +4,7 @@ import { INTERVIEW_ROUNDS, type InterviewRoundId } from "@/lib/agent/interview-r
 import type { AgentTurn, AgentCard } from "@/lib/agent/types"
 import type { InterviewSessionRecord } from "@/types/interview-session"
 import type {
+  CampaignReportPick,
   CampaignReportPicks,
   FullInterviewReport,
   StoredCampaignReport,
@@ -29,7 +30,7 @@ export interface SessionTranscript {
 }
 
 type PersistedAgentState = {
-  sessions?: Array<{ turns?: AgentTurn[] }>
+  sessions?: Array<{ id?: string; title?: string; updatedAt?: string; turns?: AgentTurn[] }>
   jd?: string
 }
 
@@ -44,9 +45,12 @@ function readAgentStorage(key: string): PersistedAgentState | null {
   }
 }
 
-function collectTurns(state: PersistedAgentState | null): AgentTurn[] {
+function collectTurns(state: PersistedAgentState | null, agentSessionId?: string): AgentTurn[] {
   if (!state?.sessions?.length) return []
-  return state.sessions.flatMap((session) => session.turns || [])
+  const sessions = agentSessionId
+    ? state.sessions.filter((session) => session.id === agentSessionId)
+    : state.sessions
+  return sessions.flatMap((session) => session.turns || [])
 }
 
 function extractQuestionsFromTurn(turn: AgentTurn): string[] {
@@ -79,7 +83,27 @@ function pairExchanges(questions: string[], answers: string[], analyses: string[
   return exchanges
 }
 
-export function extractSessionTranscript(record: InterviewSessionRecord): SessionTranscript {
+export interface InterviewAgentSessionOption {
+  id: string
+  title: string
+  updatedAt?: string
+  turnCount: number
+}
+
+export function listInterviewAgentSessions(record: InterviewSessionRecord): InterviewAgentSessionOption[] {
+  const interviewerKey = `resume.career.interview.${record.resumeId}.${record.id}.interviewer`
+  const state = readAgentStorage(interviewerKey)
+  return (state?.sessions || [])
+    .map((session, index) => ({
+      id: session.id || `agent-session-${index}`,
+      title: session.title || `第 ${index + 1} 次会话`,
+      updatedAt: session.updatedAt,
+      turnCount: session.turns?.length || 0,
+    }))
+    .filter((session) => session.turnCount > 0)
+}
+
+export function extractSessionTranscript(record: InterviewSessionRecord, agentSessionId?: string): SessionTranscript {
   const interviewerKey = `resume.career.interview.${record.resumeId}.${record.id}.interviewer`
   const analysisKey = `resume.career.interview.${record.resumeId}.${record.id}.analysis`
 
@@ -87,7 +111,7 @@ export function extractSessionTranscript(record: InterviewSessionRecord): Sessio
   const answers: string[] = []
   const analyses: string[] = []
 
-  for (const turn of collectTurns(readAgentStorage(interviewerKey))) {
+  for (const turn of collectTurns(readAgentStorage(interviewerKey), agentSessionId)) {
     if (turn.role === "assistant") {
       questions.push(...extractQuestionsFromTurn(turn))
     } else if (turn.role === "user" && turn.content?.trim()) {
@@ -95,7 +119,7 @@ export function extractSessionTranscript(record: InterviewSessionRecord): Sessio
     }
   }
 
-  for (const turn of collectTurns(readAgentStorage(analysisKey))) {
+  for (const turn of collectTurns(readAgentStorage(analysisKey), agentSessionId)) {
     if (turn.role === "assistant" && turn.content?.trim()) {
       analyses.push(turn.content.trim())
     }
@@ -137,7 +161,17 @@ export function isCampaignReadyForReport(campaignSessions: InterviewSessionRecor
 }
 
 export function isPicksComplete(picks: Partial<CampaignReportPicks>): picks is CampaignReportPicks {
-  return INTERVIEW_ROUNDS.every((round) => Boolean(picks[round.id]))
+  return Object.values(picks).some(Boolean)
+}
+
+export function normalizeCampaignReportPick(pick: CampaignReportPick | string | undefined): CampaignReportPick | null {
+  if (!pick) return null
+  if (typeof pick === "string") return { sessionId: pick }
+  return pick.sessionId ? pick : null
+}
+
+export function hasReportableInterview(campaignSessions: InterviewSessionRecord[]): boolean {
+  return campaignSessions.some((session) => (session.questionCount || 0) > 0 || session.status !== "in_progress")
 }
 
 export function listReportReadyCampaigns(): Array<{
@@ -148,7 +182,7 @@ export function listReportReadyCampaigns(): Array<{
 }> {
   const result: Array<{ campaignId: string; title: string; resumeTitle: string; sessions: InterviewSessionRecord[] }> = []
   for (const [campaignId, sessions] of groupSessionsByCampaign(listInterviewSessions())) {
-    if (!isCampaignReadyForReport(sessions)) continue
+    if (!hasReportableInterview(sessions)) continue
     const latest = [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
     result.push({
       campaignId,
@@ -205,10 +239,14 @@ export function buildReportInput(
   rounds: SessionTranscript[]
 } {
   const transcripts = INTERVIEW_ROUNDS.map((round) => {
-    const session = campaignSessions.find((item) => item.id === picks[round.id])
-    if (!session) throw new Error(`缺少 ${round.label} 的会话选择`)
-    return extractSessionTranscript(session)
-  })
+    const pick = normalizeCampaignReportPick(picks[round.id])
+    if (!pick) return null
+    const session = campaignSessions.find((item) => item.id === pick.sessionId)
+    if (!session) throw new Error(`${round.label} 的会话选择已失效`)
+    return extractSessionTranscript(session, pick.agentSessionId)
+  }).filter((item): item is SessionTranscript => Boolean(item))
+
+  if (!transcripts.length) throw new Error("请至少选择一场面试记录")
 
   const first = transcripts[0]
   return {

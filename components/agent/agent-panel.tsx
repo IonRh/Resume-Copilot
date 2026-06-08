@@ -59,6 +59,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   workspace?: WorkspaceContextValue
   onUserSubmit?: (text: string) => void
   onUserTurnComplete?: (text: string) => void
+  onNewSession?: (mode: AgentMode) => void
 }>(function AgentPanel({
   asOverlay = false,
   lockedMode,
@@ -66,6 +67,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   workspace,
   onUserSubmit,
   onUserTurnComplete,
+  onNewSession,
 }, ref) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
@@ -250,6 +252,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
 
   const createSession = () => {
     ws.newSession(newSessionMode)
+    onNewSession?.(newSessionMode)
     setNewSessionOpen(false)
   }
 
@@ -327,6 +330,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               onClick={() => {
                 if (lockedMode) {
                   ws.newSession(lockedMode)
+                  onNewSession?.(lockedMode)
                 } else {
                   setNewSessionMode("edit")
                   setNewSessionOpen(true)

@@ -7,6 +7,21 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -18,7 +33,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import type { StoredResume } from "@/types/resume"
-import type { InterviewSessionRecord } from "@/types/interview-session"
+import type { InterviewRoundHandoff, InterviewSessionRecord } from "@/types/interview-session"
 import { getAllResumes, getCachedResumes } from "@/lib/storage"
 import { composeInterviewBriefing, getInterviewRound, getNextRound } from "@/lib/agent/interview-rounds"
 import {
@@ -28,6 +43,13 @@ import {
   listInterviewSessions,
   stashInterviewBriefing,
 } from "@/lib/interview-sessions"
+import {
+  deleteStoredRoundHandoff,
+  generateRoundHandoff,
+  getStoredRoundHandoff,
+} from "@/lib/interview-handoff"
+import { listInterviewAgentSessions } from "@/lib/interview-report"
+import { Markdown } from "@/components/agent/markdown"
 import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
 
 function formatDateTime(iso?: string): string {
@@ -57,6 +79,10 @@ function playModeLabel(mode: InterviewSessionRecord["playMode"]) {
   return mode === "simulation" ? "真实模拟" : "学习练手"
 }
 
+function handoffCacheKey(interviewSessionId: string, agentSessionId: string): string {
+  return agentSessionId === interviewSessionId ? interviewSessionId : `${interviewSessionId}:${agentSessionId}`
+}
+
 export default function InterviewHub() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -69,6 +95,12 @@ export default function InterviewHub() {
   const [intakeOpen, setIntakeOpen] = useState(false)
   const [defaultResumeId, setDefaultResumeId] = useState<string | undefined>()
   const [deleteTarget, setDeleteTarget] = useState<InterviewSessionRecord | null>(null)
+  const [handoffParent, setHandoffParent] = useState<InterviewSessionRecord | null>(null)
+  const [handoffSourceId, setHandoffSourceId] = useState("")
+  const [handoff, setHandoff] = useState<InterviewRoundHandoff | null>(null)
+  const [handoffVisible, setHandoffVisible] = useState(false)
+  const [handoffBusy, setHandoffBusy] = useState(false)
+  const [handoffError, setHandoffError] = useState<string | null>(null)
 
   const refreshSessions = useCallback(() => {
     setSessions(listInterviewSessions())
@@ -128,6 +160,22 @@ export default function InterviewHub() {
     )
   }, [keyword, sessions])
 
+  const handoffSourceOptions = useMemo(() => {
+    if (!handoffParent) return []
+    const agentSessions = listInterviewAgentSessions(handoffParent)
+    if (agentSessions.length) {
+      return agentSessions.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+    }
+    return [
+      {
+        id: handoffParent.id,
+        title: "当前会话",
+        updatedAt: handoffParent.updatedAt,
+        turnCount: handoffParent.questionCount || 0,
+      },
+    ]
+  }, [handoffParent])
+
   const openIntake = useCallback(
     (resumeId?: string) => {
       if (!mostRecent) {
@@ -163,14 +211,77 @@ export default function InterviewHub() {
     [goToSession],
   )
 
-  const startNextRound = useCallback(
+  const openHandoffDialog = useCallback(
     (session: InterviewSessionRecord) => {
       const nextRound = getNextRound(session.roundId)
       if (!nextRound) {
         toast({ title: "已是最后一轮", description: "Leader 面是本次模拟面试的最后一轮。" })
         return
       }
-      const nextSession = createNextRoundSession(session)
+      const agentSessions = listInterviewAgentSessions(session)
+      const sourceId = agentSessions[0]?.id || session.id
+      setHandoffParent(session)
+      setHandoffSourceId(sourceId)
+      setHandoff(getStoredRoundHandoff(handoffCacheKey(session.id, sourceId)) || getStoredRoundHandoff(session.id) || null)
+      setHandoffVisible(false)
+      setHandoffError(null)
+    },
+    [toast],
+  )
+
+  const selectedHandoffSource = useMemo(
+    () => handoffSourceOptions.find((item) => item.id === handoffSourceId),
+    [handoffSourceId, handoffSourceOptions],
+  )
+
+  const generateSelectedHandoff = useCallback(async (source = selectedHandoffSource, force = false) => {
+    if (!source || !handoffParent) return null
+    const handoffKey = handoffCacheKey(handoffParent.id, source.id)
+    const cached = force ? undefined : getStoredRoundHandoff(handoffKey)
+    if (cached) {
+      setHandoff(cached)
+      return cached
+    }
+
+    setHandoffBusy(true)
+    setHandoffError(null)
+    try {
+      const next = await generateRoundHandoff({
+        session: handoffParent,
+        agentSessionId: source.id === handoffParent.id ? undefined : source.id,
+      })
+      setHandoff(next)
+      return next
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "生成交接评价失败"
+      setHandoffError(message)
+      return null
+    } finally {
+      setHandoffBusy(false)
+    }
+  }, [handoffParent, selectedHandoffSource])
+
+  useEffect(() => {
+    if (!handoffParent || !handoffSourceId) return
+    setHandoff(getStoredRoundHandoff(handoffCacheKey(handoffParent.id, handoffSourceId)) || null)
+    setHandoffVisible(false)
+    setHandoffError(null)
+  }, [handoffParent, handoffSourceId])
+
+  useEffect(() => {
+    if (!handoffParent || !selectedHandoffSource || handoff) return
+    void generateSelectedHandoff()
+  }, [generateSelectedHandoff, handoff, handoffParent, selectedHandoffSource])
+
+  const startNextRoundWithHandoff = useCallback(async () => {
+    if (!handoffParent) return
+    const nextRound = getNextRound(handoffParent.roundId)
+    if (!nextRound) return
+
+    const handoffToUse = handoff || (await generateSelectedHandoff())
+    if (!handoffToUse) return
+
+    const nextSession = createNextRoundSession(handoffParent, handoffToUse)
       if (!nextSession) {
         toast({
           title: "无法进入下一轮",
@@ -181,10 +292,12 @@ export default function InterviewHub() {
       }
       const briefing = composeInterviewBriefing(nextRound, nextSession.jobBriefing || "")
       goToSession(nextSession, briefing)
+      setHandoffParent(null)
+      setHandoff(null)
       refreshSessions()
-      toast({ title: "已进入下一轮", description: `${nextRound.label} 已就绪。` })
+      toast({ title: "已带入交接评价", description: `${nextRound.label} 已就绪。` })
     },
-    [goToSession, refreshSessions, toast],
+    [generateSelectedHandoff, goToSession, handoff, handoffParent, refreshSessions, toast],
   )
 
   const confirmDelete = useCallback(() => {
@@ -343,7 +456,11 @@ export default function InterviewHub() {
                       {session.status === "terminated" ? "查看记录" : session.status === "completed" ? "查看" : "继续面试"}
                     </Button>
                     {nextRound ? (
-                      <Button size="sm" className="brand-gradient-bg gap-1 border-0" onClick={() => startNextRound(session)}>
+                      <Button
+                        size="sm"
+                        className="brand-gradient-bg gap-1 border-0"
+                        onClick={() => openHandoffDialog(session)}
+                      >
                         <Icon icon="mdi:arrow-right-circle-outline" className="h-4 w-4" />
                         进入{nextRound.round}
                       </Button>
@@ -375,6 +492,128 @@ export default function InterviewHub() {
           if (!open) refreshSessions()
         }}
       />
+
+      <Dialog
+        open={!!handoffParent}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHandoffParent(null)
+            setHandoff(null)
+            setHandoffError(null)
+          }
+        }}
+      >
+        <DialogContent className="flex max-h-[84vh] flex-col overflow-hidden sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>进入下一面前的交接评价</DialogTitle>
+            <DialogDescription>
+              选择上一轮会话，系统会生成一份给下一位面试官看的内部评价，并带入下一轮上下文。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">上一轮会话</div>
+              <Select value={handoffSourceId} onValueChange={setHandoffSourceId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择会话 ID" />
+                </SelectTrigger>
+                <SelectContent>
+                  {handoffSourceOptions.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.title} · {formatDateTime(item.updatedAt)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20">
+              <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">上一轮评价</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {selectedHandoffSource && handoffParent
+                      ? `${handoffParent.roundLabel} · ${selectedHandoffSource.title}`
+                      : "未选择会话"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    title={handoffVisible ? "隐藏评价" : "查看评价"}
+                    onClick={() => setHandoffVisible((value) => !value)}
+                  >
+                    <Icon icon={handoffVisible ? "mdi:eye-off-outline" : "mdi:eye-outline"} className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 bg-transparent"
+                    disabled={handoffBusy || !selectedHandoffSource}
+                    onClick={() => {
+                      if (!selectedHandoffSource || !handoffParent) return
+                      deleteStoredRoundHandoff(handoffCacheKey(handoffParent.id, selectedHandoffSource.id))
+                      setHandoff(null)
+                      void generateSelectedHandoff(selectedHandoffSource, true)
+                    }}
+                  >
+                    <Icon icon="mdi:refresh" className={`h-4 w-4 ${handoffBusy ? "agent-spin" : ""}`} />
+                    重生成
+                  </Button>
+                </div>
+              </div>
+              <div className="relative min-h-[220px] p-4">
+                {handoffBusy ? (
+                  <div className="flex h-44 items-center justify-center text-sm text-muted-foreground">
+                    <Icon icon="mdi:loading" className="agent-spin mr-2 h-4 w-4" />
+                    正在生成上一轮评价…
+                  </div>
+                ) : handoffError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    {handoffError}
+                  </div>
+                ) : handoff ? (
+                  <div className={handoffVisible ? "" : "select-none blur-sm"}>
+                    <Markdown content={handoff.content} />
+                  </div>
+                ) : (
+                  <div className="flex h-44 items-center justify-center text-sm text-muted-foreground">
+                    暂无评价，点击重生成。
+                  </div>
+                )}
+                {!handoffVisible && handoff && !handoffBusy ? (
+                  <button
+                    type="button"
+                    className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/35 text-sm font-medium text-foreground backdrop-blur-[1px]"
+                    onClick={() => setHandoffVisible(true)}
+                  >
+                    <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 shadow-sm">
+                      <Icon icon="mdi:eye-outline" className="h-4 w-4" />
+                      点击查看交接评价
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="bg-transparent" onClick={() => setHandoffParent(null)}>
+              取消
+            </Button>
+            <Button
+              className="brand-gradient-bg border-0"
+              disabled={handoffBusy || !handoff}
+              onClick={() => void startNextRoundWithHandoff()}
+            >
+              带入评价并进入下一面
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

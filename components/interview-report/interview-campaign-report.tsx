@@ -10,8 +10,9 @@ import { INTERVIEW_ROUNDS } from "@/lib/agent/interview-rounds"
 import {
   getCampaignSessions,
   getStoredCampaignReport,
-  isCampaignReadyForReport,
   isPicksComplete,
+  listInterviewAgentSessions,
+  normalizeCampaignReportPick,
   saveCampaignReport,
   sessionsForRound,
 } from "@/lib/interview-report"
@@ -32,6 +33,10 @@ function formatDateTime(iso?: string): string {
   })
 }
 
+function pickValue(sessionId: string, agentSessionId?: string): string {
+  return agentSessionId ? `${sessionId}:${agentSessionId}` : sessionId
+}
+
 export default function InterviewCampaignReport({ campaignId }: { campaignId: string }) {
   const router = useRouter()
   const { toast } = useToast()
@@ -42,7 +47,12 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
   const [showPicker, setShowPicker] = useState(true)
 
   const sessions = useMemo(() => getCampaignSessions(campaignId), [campaignId])
-  const ready = isCampaignReadyForReport(sessions)
+  const reportableRounds = useMemo(
+    () => INTERVIEW_ROUNDS.map((round) => ({ round, sessions: sessionsForRound(sessions, round.id) })).filter(
+      (item) => item.sessions.length > 0,
+    ),
+    [sessions],
+  )
   const picksComplete = isPicksComplete(picks)
 
   useEffect(() => {
@@ -52,18 +62,21 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
   }, [campaignId])
 
   useEffect(() => {
-    if (!ready || sessions.length === 0) return
+    if (sessions.length === 0) return
     const defaults: Partial<CampaignReportPicks> = {}
     for (const round of INTERVIEW_ROUNDS) {
       const list = sessionsForRound(sessions, round.id)
-      if (list[0]) defaults[round.id] = list[0].id
+      if (list[0]) {
+        const agentSession = listInterviewAgentSessions(list[0])[0]
+        defaults[round.id] = { sessionId: list[0].id, agentSessionId: agentSession?.id }
+      }
     }
     setPicks(defaults)
-  }, [ready, sessions])
+  }, [sessions])
 
   const generate = async () => {
     if (!picksComplete) {
-      toast({ title: "请选择每一轮", description: "每轮需选定一场最满意的模拟面试记录。", variant: "destructive" })
+      toast({ title: "请选择面试记录", description: "至少选择一场可复盘的模拟面试记录。", variant: "destructive" })
       return
     }
     setGenerating(true)
@@ -93,12 +106,12 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
     }
   }
 
-  if (!ready) {
+  if (sessions.length === 0) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <h2 className="text-lg font-semibold">暂无法生成报告</h2>
+        <h2 className="text-lg font-semibold">没有找到面试记录</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          需要完成全部 5 轮模拟面试（每轮至少一场记录）后，才能生成综合报告。
+          这次投递暂无可复盘的模拟面试记录，返回大厅看看其他投递。
         </p>
         <Button className="mt-6" variant="outline" onClick={() => router.push("/interviews")}>
           返回模拟面试
@@ -119,7 +132,7 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
             </Button>
             <div>
               <h1 className="text-lg font-semibold">{title}</h1>
-              <p className="text-xs text-muted-foreground">选择每轮最满意的记录，交给报告 Agent 生成综合报告</p>
+              <p className="text-xs text-muted-foreground">选择要复盘的记录，交给报告 Agent 生成阶段报告</p>
             </div>
           </div>
           {stored && !showPicker ? (
@@ -134,50 +147,86 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
         {showPicker ? (
           <>
             <div className="rounded-2xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold">选择每轮代表记录</h2>
+              <h2 className="text-base font-semibold">选择代表记录</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                同一轮可能有多场练习，请各选一场你认为表现最好的，再生成报告。
+                已完成或被关闭的投递不必凑满五轮，选择已有记录即可生成阶段性复盘。
               </p>
             </div>
 
             <div className="space-y-4">
-              {INTERVIEW_ROUNDS.map((round) => {
-                const list = sessionsForRound(sessions, round.id)
+              {reportableRounds.map(({ round, sessions: list }) => {
                 return (
                   <div key={round.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="mb-3 flex items-center gap-2">
                       <Badge variant="secondary">{round.label}</Badge>
-                      <span className="text-xs text-muted-foreground">{list.length} 场可选</span>
+                      <span className="text-xs text-muted-foreground">
+                        {list.reduce((total, session) => total + Math.max(listInterviewAgentSessions(session).length, 1), 0)} 个会话可选
+                      </span>
                     </div>
                     <div className="space-y-2">
                       {list.map((session) => {
-                        const selected = picks[round.id] === session.id
-                        return (
-                          <button
-                            key={session.id}
-                            type="button"
-                            onClick={() => setPicks((prev) => ({ ...prev, [round.id]: session.id }))}
-                            className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
-                              selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
-                            }`}
-                          >
-                            <span
-                              className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${
-                                selected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                        const agentSessions = listInterviewAgentSessions(session)
+                        const options = agentSessions.length
+                          ? agentSessions.map((agentSession) => ({
+                              id: pickValue(session.id, agentSession.id),
+                              sessionId: session.id,
+                              agentSessionId: agentSession.id,
+                              title: agentSession.title,
+                              updatedAt: agentSession.updatedAt || session.updatedAt,
+                              turnCount: agentSession.turnCount,
+                            }))
+                          : [
+                              {
+                              id: pickValue(session.id),
+                              sessionId: session.id,
+                              title: "当前会话",
+                              updatedAt: session.updatedAt,
+                              turnCount: session.questionCount || 0,
+                              },
+                            ]
+
+                        return options.map((option) => {
+                          const selectedPick = normalizeCampaignReportPick(picks[round.id])
+                          const selected =
+                            selectedPick?.sessionId === option.sessionId &&
+                            selectedPick?.agentSessionId === option.agentSessionId
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() =>
+                                setPicks((prev) => ({
+                                  ...prev,
+                                  [round.id]: { sessionId: option.sessionId, agentSessionId: option.agentSessionId },
+                                }))
+                              }
+                              className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+                                selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
                               }`}
                             >
-                              {selected ? <Icon icon="mdi:check" className="h-3 w-3 text-primary-foreground" /> : null}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-medium">{session.title}</span>
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                {formatDateTime(session.updatedAt)}
-                                {session.questionCount ? ` · ${session.questionCount} 题` : ""}
-                                {session.status === "completed" ? " · 已完成" : " · 进行中"}
+                              <span
+                                className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${
+                                  selected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                                }`}
+                              >
+                                {selected ? <Icon icon="mdi:check" className="h-3 w-3 text-primary-foreground" /> : null}
                               </span>
-                            </span>
-                          </button>
-                        )
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-medium">{session.title}</span>
+                                <span className="mt-1 block text-xs text-muted-foreground">
+                                  {option.title} · {formatDateTime(option.updatedAt)}
+                                  {option.turnCount ? ` · ${option.turnCount} 条对话` : ""}
+                                  {session.questionCount ? ` · ${session.questionCount} 题` : ""}
+                                  {session.status === "completed"
+                                    ? " · 已完成"
+                                    : session.status === "terminated"
+                                      ? " · 已关闭"
+                                      : " · 进行中"}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })
                       })}
                     </div>
                   </div>

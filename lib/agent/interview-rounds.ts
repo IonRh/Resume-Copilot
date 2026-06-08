@@ -154,8 +154,12 @@ export function interviewRoundSystemPromptBlock(round: InterviewRoundProfile): s
 export function interviewRoundIntakeNote(round: InterviewRoundProfile): string {
   return [
     "【用户已在界面选择面试轮次，不要再询问】",
-    interviewRoundSystemPromptBlock(round),
-    "收集完岗位信息后，finish_intake 的 briefing 只需保留岗位/公司/JD 与用户补充要点，不要重复粘贴上述人格设定。",
+    `已选轮次：${round.round}`,
+    "正式面试官身份已由系统记录，仅进入面试台后启用；intake 阶段不要自称面试官。",
+    "intake 阶段你的身份仍是模拟面试设定与公司岗位研究助手，只负责收集公司/岗位/JD、做研究并整理 briefing。",
+    "可参考本轮关注方向来组织研究摘要，但不要进入正式面试、不要按面试官人格说话、不要自报面试官身份。",
+    `本轮关注方向：${round.questionFocus.join("、")}`,
+    "收集完岗位信息后，finish_intake 的 briefing 只需保留轮次、岗位/公司/JD 与用户补充要点，不要粘贴人格设定。",
   ].join("\n\n")
 }
 

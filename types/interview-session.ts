@@ -5,6 +5,14 @@ export type InterviewPlayMode = "practice" | "simulation"
 
 export type InterviewSessionStatus = "in_progress" | "completed" | "terminated"
 
+export interface InterviewRoundHandoff {
+  fromSessionId: string
+  fromRoundId: InterviewRoundId
+  fromRoundLabel: string
+  generatedAt: string
+  content: string
+}
+
 export interface InterviewSessionRecord {
   id: string
   /** 同一次投递模拟的多轮面试共享同一 campaignId */
@@ -21,6 +29,8 @@ export interface InterviewSessionRecord {
   briefingPreview?: string
   /** 上一轮 session id（进入下一轮时关联） */
   previousSessionId?: string
+  /** 企业面试式轮次交接评价，进入下一轮时注入给下一位面试官 */
+  handoff?: InterviewRoundHandoff
   status: InterviewSessionStatus
   /** 学习练手 / 真实模拟，默认 practice */
   playMode?: InterviewPlayMode

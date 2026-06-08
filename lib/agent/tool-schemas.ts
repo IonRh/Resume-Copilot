@@ -813,7 +813,7 @@ export const CAMPAIGN_REPORT_TOOL = {
   function: {
     name: "present_campaign_report",
     description:
-      "基于用户选定的五轮模拟面试记录，生成完整面试报告（综合分、能力雷达、分轮评价、改进建议）。必须一次性输出完整结构。",
+      "基于用户选定的一轮或多轮模拟面试记录，生成完整面试报告（综合分、能力雷达、分轮评价、改进建议）。必须一次性输出完整结构。",
     parameters: {
       type: "object",
       properties: {

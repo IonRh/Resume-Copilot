@@ -199,6 +199,7 @@ function CareerInner({
   const analysisPanelRef = useRef<AgentPanelHandle | null>(null)
   const { toast } = useToast()
   const router = useRouter()
+  const [analysisResetId, setAnalysisResetId] = useState(0)
   const [variantDialogOpen, setVariantDialogOpen] = useState(false)
   const [variantTitle, setVariantTitle] = useState("")
   const [savingVariant, setSavingVariant] = useState(false)
@@ -364,18 +365,20 @@ function CareerInner({
         "【用户回答】",
         answer,
         "",
-        "请严格按以下结构输出（用 ### 小标题）：",
-        "### 我听到的",
-        "### 亮点",
-        "### 待补齐",
-        "### 优先改进",
-        "### 可直接复述版",
-        "另附一行：**五维** substance/structure/relevance/credibility/differentiation = x/x/x/x/x；**面试官可能追问** 1-2 条。",
+        "请按「单题评分 / 回答亮点 / 主要问题 / 面试官可能追问 / 可直接复述版本」给出简洁分析。",
       ].join("\n")
       analysisPanelRef.current?.send(prompt, { displayText: "模型查看了你的面试回答，正在分析这一轮表现。" })
     },
     [analysisStorageKey, latestInterviewQuestion, mode],
   )
+
+  const resetInterviewAnalysis = useCallback(() => {
+    if (!analysisStorageKey || mode !== "interview") return
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(analysisStorageKey)
+    }
+    setAnalysisResetId((id) => id + 1)
+  }, [analysisStorageKey, mode])
 
   // 只读模式（模拟面试分析 / 岗位方向推荐）：预览不可交互，避免产生选中态污染上下文，也不出现「用 AI 优化」
   const previewInteractive = !analysisStorageKey && mode !== "discover"
@@ -433,7 +436,7 @@ function CareerInner({
 
       <div className={`career-body ${analysisStorageKey ? "career-body-interview" : ""}`}>
         {analysisStorageKey ? (
-          <ResumeWorkspaceProvider initialData={initialData} storageKey={analysisStorageKey}>
+          <ResumeWorkspaceProvider key={analysisResetId} initialData={initialData} storageKey={analysisStorageKey}>
             <InterviewAnalysisPanel ref={analysisPanelRef} briefing={briefing || ""} />
           </ResumeWorkspaceProvider>
         ) : null}
@@ -449,7 +452,11 @@ function CareerInner({
             />
           </div>
         </div>
-        <AgentPanel lockedMode={mode} onUserTurnComplete={onInterviewAnswer} />
+        <AgentPanel
+          lockedMode={mode}
+          onUserTurnComplete={onInterviewAnswer}
+          onNewSession={mode === "interview" ? resetInterviewAnalysis : undefined}
+        />
       </div>
 
       <Dialog

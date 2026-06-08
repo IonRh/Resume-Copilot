@@ -38,7 +38,12 @@ export interface FullInterviewReport {
   suggestions: ReportSuggestion[]
 }
 
-export type CampaignReportPicks = Record<InterviewRoundId, string>
+export interface CampaignReportPick {
+  sessionId: string
+  agentSessionId?: string
+}
+
+export type CampaignReportPicks = Partial<Record<InterviewRoundId, CampaignReportPick | string>>
 
 export interface StoredCampaignReport {
   campaignId: string
