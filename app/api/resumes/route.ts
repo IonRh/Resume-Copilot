@@ -5,13 +5,16 @@ import { createResume, deleteResumeIds, listResumes } from "@/lib/server/resume-
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-function bodyResumeData(body: unknown): ResumeData | null {
+function parseResumeBody(body: unknown): { resumeData: ResumeData; displayName?: string } | null {
   if (!body || typeof body !== "object") return null
-  const maybe = body as Partial<ResumeData> & { resumeData?: unknown }
+  const maybe = body as Partial<ResumeData> & { resumeData?: unknown; displayName?: unknown }
   const candidate = maybe.resumeData && typeof maybe.resumeData === "object"
     ? maybe.resumeData
     : body
-  return candidate as ResumeData
+  return {
+    resumeData: candidate as ResumeData,
+    displayName: typeof maybe.displayName === "string" ? maybe.displayName : undefined,
+  }
 }
 
 export async function GET() {
@@ -27,11 +30,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     await assertResumeApiAuthorized()
-    const resumeData = bodyResumeData(await req.json().catch(() => null))
-    if (!resumeData) {
+    const payload = parseResumeBody(await req.json().catch(() => null))
+    if (!payload) {
       return Response.json({ error: "缺少简历数据" }, { status: 400 })
     }
-    return Response.json({ resume: await createResume(resumeData) }, { status: 201 })
+    return Response.json({ resume: await createResume(payload.resumeData, payload.displayName) }, { status: 201 })
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return unauthorizedResponse()
     return Response.json({ error: error instanceof Error ? error.message : "创建简历失败" }, { status: 500 })

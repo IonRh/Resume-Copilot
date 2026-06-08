@@ -21,6 +21,7 @@ import { buildResumeOutline } from "@/lib/agent/changeset"
 import { streamChat } from "@/lib/agent/stream"
 import { INTERVIEW_INTAKE_TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
 import { getResumeById } from "@/lib/storage"
+import { getResumeDisplayName } from "@/lib/resume-display"
 import { extractInterviewTitle, upsertInterviewSession } from "@/lib/interview-sessions"
 import {
   composeInterviewBriefing,
@@ -124,7 +125,7 @@ export default function CareerIntakeDialog({
         id: sessionId,
         campaignId,
         resumeId: id,
-        resumeTitle: resume?.resumeData.title || "未命名",
+        resumeTitle: getResumeDisplayName(resume),
         title: extractInterviewTitle(briefing),
         roundLabel: selectedRound.label,
         roundId: selectedRoundId,
@@ -340,7 +341,7 @@ export default function CareerIntakeDialog({
               <SelectContent>
                 {resumes.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
-                    {r.resumeData.title || "未命名"}
+                    {getResumeDisplayName(r)}
                   </SelectItem>
                 ))}
               </SelectContent>

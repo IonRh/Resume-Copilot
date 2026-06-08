@@ -1,6 +1,6 @@
 import type { ResumeData } from "@/types/resume"
 import { assertResumeApiAuthorized, unauthorizedResponse } from "@/lib/server/api-auth"
-import { deleteResumeIds, getResume, updateResume } from "@/lib/server/resume-store"
+import { deleteResumeIds, getResume, updateResume, updateResumeDisplayName } from "@/lib/server/resume-store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -12,13 +12,16 @@ async function resolveId(ctx: RouteContext) {
   return params.id
 }
 
-function bodyResumeData(body: unknown): ResumeData | null {
+function parseResumeBody(body: unknown): { resumeData: ResumeData; displayName?: string } | null {
   if (!body || typeof body !== "object") return null
-  const maybe = body as Partial<ResumeData> & { resumeData?: unknown }
+  const maybe = body as Partial<ResumeData> & { resumeData?: unknown; displayName?: unknown }
   const candidate = maybe.resumeData && typeof maybe.resumeData === "object"
     ? maybe.resumeData
     : body
-  return candidate as ResumeData
+  return {
+    resumeData: candidate as ResumeData,
+    displayName: typeof maybe.displayName === "string" ? maybe.displayName : undefined,
+  }
 }
 
 export async function GET(_req: Request, ctx: RouteContext) {
@@ -36,11 +39,26 @@ export async function GET(_req: Request, ctx: RouteContext) {
 export async function PUT(req: Request, ctx: RouteContext) {
   try {
     await assertResumeApiAuthorized()
-    const resumeData = bodyResumeData(await req.json().catch(() => null))
-    if (!resumeData) {
+    const body = await req.json().catch(() => null)
+    if (
+      body &&
+      typeof body === "object" &&
+      "displayName" in body &&
+      !("resumeData" in body) &&
+      !("title" in body)
+    ) {
+      const displayName = (body as { displayName?: unknown }).displayName
+      if (typeof displayName !== "string" || !displayName.trim()) {
+        return Response.json({ error: "简历名称不能为空" }, { status: 400 })
+      }
+      return Response.json({ resume: await updateResumeDisplayName(await resolveId(ctx), displayName) })
+    }
+
+    const payload = parseResumeBody(body)
+    if (!payload) {
       return Response.json({ error: "缺少简历数据" }, { status: 400 })
     }
-    return Response.json({ resume: await updateResume(await resolveId(ctx), resumeData) })
+    return Response.json({ resume: await updateResume(await resolveId(ctx), payload.resumeData, payload.displayName) })
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return unauthorizedResponse()
     const message = error instanceof Error ? error.message : "保存简历失败"

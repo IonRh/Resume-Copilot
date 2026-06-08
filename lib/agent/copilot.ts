@@ -10,6 +10,7 @@
 import type { StoredResume } from "@/types/resume"
 import type { ApplicationStatus, JobApplication } from "@/types/application"
 import { ACTIVE_APPLICATION_STATUSES, APPLICATION_STATUS_FLOW } from "@/types/application"
+import { getResumeDisplayName } from "@/lib/resume-display"
 
 /** 管家可发起的行动意图类型 */
 export type CopilotActionKind =
@@ -92,7 +93,7 @@ function emptyStatusCounts(): Record<ApplicationStatus, number> {
 }
 
 function titleOf(entry: StoredResume): string {
-  return entry.resumeData.title || "未命名"
+  return getResumeDisplayName(entry)
 }
 
 /** 汇总简历 + 投递为信号与精简文本 */

@@ -26,6 +26,9 @@ yarn-error.log*
 # server-side resume data
 /data/resumes.json
 /data/resumes.json.tmp
+/data/resumes.sqlite
+/data/resumes.sqlite-shm
+/data/resumes.sqlite-wal
 
 # vercel
 .vercel

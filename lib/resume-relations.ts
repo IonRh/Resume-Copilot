@@ -63,17 +63,16 @@ export function getResumeVariantLabel(data: ResumeData): string {
 export function createJdVariantResumeData(
   source: ResumeData,
   parent: { id: string; title: string },
-  title = buildJdVariantTitle(source.title),
+  resumeTitle = source.title,
 ): ResumeData {
   const now = new Date().toISOString()
-  const parsed = parseResumeVariantTitle(title)
   return {
     ...source,
-    title,
+    title: resumeTitle,
     parentResumeId: parent.id,
     parentResumeTitle: parent.title || source.parentResumeTitle || source.title || "未命名",
     resumeKind: "jdVariant",
-    variantLabel: parsed?.label || "岗位定制版",
+    variantLabel: source.variantLabel || "岗位定制版",
     createdAt: now,
     updatedAt: now,
   }

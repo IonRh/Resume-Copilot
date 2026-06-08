@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, stashResumeForEdit, updateEntryData } from "@/lib/storage"
-import { buildJdVariantTitle, createJdVariantResumeData } from "@/lib/resume-relations"
+import { buildJdVariantTitle, createJdVariantResumeData, parseResumeVariantTitle } from "@/lib/resume-relations"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
@@ -220,8 +220,8 @@ function CareerInner({
     [entryId, initialData.parentResumeTitle, initialData.title, resumeData.parentResumeId, resumeData.parentResumeTitle, resumeData.title],
   )
   const defaultVariantTitle = useMemo(
-    () => buildJdVariantTitle(variantParent.title || resumeData.title || "我的简历"),
-    [resumeData.title, variantParent.title],
+    () => buildJdVariantTitle(resumeData.parentResumeTitle || resumeData.title || "我的简历"),
+    [resumeData.parentResumeTitle, resumeData.title],
   )
 
   const openVariantDialog = useCallback(() => {
@@ -238,10 +238,13 @@ function CareerInner({
     }
     setSavingVariant(true)
     try {
-      const variant = createJdVariantResumeData(resumeData, variantParent, title)
-      const entry = await createEntryFromData(variant)
+      const variant = {
+        ...createJdVariantResumeData(resumeData, variantParent),
+        variantLabel: parseResumeVariantTitle(title)?.label || "岗位定制版",
+      }
+      const entry = await createEntryFromData(variant, title)
       stashResumeForEdit(entry)
-      toast({ title: "已另存定制版", description: `「${variant.title}」已保存到我的简历` })
+      toast({ title: "已另存定制版", description: `「${title}」已保存到我的简历` })
       setVariantDialogOpen(false)
       router.push(`/edit/${entry.id}`)
     } catch (e) {
@@ -252,7 +255,7 @@ function CareerInner({
       })
       setSavingVariant(false)
     }
-  }, [resumeData, router, toast, variantTitle])
+  }, [resumeData, router, toast, variantParent, variantTitle])
 
   // 读取 intake 阶段的简报，设置上下文（仅一次）
   useEffect(() => {
@@ -465,11 +468,11 @@ function CareerInner({
           >
             <DialogHeader>
               <DialogTitle>命名定制简历</DialogTitle>
-              <DialogDescription>这会创建一份新的简历，不覆盖当前原简历。</DialogDescription>
+              <DialogDescription>这会创建一份新的简历，只修改外部名称，不覆盖正文标题。</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-2">
-              <Label htmlFor="variant-title">简历名称</Label>
+              <Label htmlFor="variant-title">外部名称</Label>
               <Input
                 id="variant-title"
                 value={variantTitle}

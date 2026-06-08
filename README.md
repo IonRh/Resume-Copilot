@@ -107,7 +107,7 @@ pnpm build
 │  │  ├── normalize.ts                  # 数据规范化与校验
 │  │  ├── operations.ts                 # 不可变查找、更新、排序
 │  │  └── outline.ts                    # AI 可读简历大纲生成
-│  ├── server/resume-store.ts           # 服务端简历文件仓库
+│  ├── server/resume-store.ts           # 服务端 SQLite 简历仓库
 │  ├── utils.ts                         # 通用工具
 │  └── storage.ts                       # 后台简历 API 客户端
 ├── styles/
@@ -116,7 +116,7 @@ pnpm build
 │  └── tiptap.css                       # 富文本编辑器样式
 ├── data/
 │  ├── templates/                       # 服务端模板数据（不作为静态资源暴露）
-│  └── resumes.json                     # 运行时简历数据（已 gitignore）
+│  └── resumes.sqlite                   # 运行时简历数据（已 gitignore）
 ├── public/
 │  ├── NotoSansSC-Medium.ttf            # 字体（预览/打印共用）
 │  └── …
@@ -150,7 +150,8 @@ export interface ResumeData {
 ### 用户中心与后台存储
 
 - 首页即用户中心：集中管理后台保存的简历条目
-- 数据通过 `/api/resumes` 统一读写，运行时落在服务端 `data/resumes.json`
+- 数据通过 `/api/resumes` 统一读写，运行时落在服务端 `data/resumes.sqlite`
+- 首次启动 SQLite 仓库时会自动从旧版 `data/resumes.json` / `data/resumes.json.bak` 迁移已有简历
 - 操作：新建、编辑、预览、复制（从现有条目预填）、成品导出、批量选择与删除等
 - 支持按标题搜索、按名称/创建时间/更新时间排序
 

@@ -19,8 +19,9 @@ import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { createEntryFromData, deleteResumes, getAllResumes, getCachedResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
+import { createEntryFromData, deleteResumes, getAllResumes, getCachedResumes, loadDefaultTemplate, loadExampleTemplate, updateEntryDisplayName } from "@/lib/storage"
 import { createDefaultResumeData } from "@/lib/resume-core"
+import { getResumeDisplayName, getResumeStoredName } from "@/lib/resume-display"
 import {
   getResumeParentId,
   getResumeVariantLabel,
@@ -57,7 +58,19 @@ function timeOf(value?: string): number {
 }
 
 function titleOf(entry: StoredResume): string {
-  return entry.resumeData.title || "未命名"
+  return getResumeDisplayName(entry)
+}
+
+function storedTitleOf(entry: StoredResume): string {
+  return getResumeStoredName(entry)
+}
+
+function hasSeparateDisplayName(entry: StoredResume): boolean {
+  return titleOf(entry) !== storedTitleOf(entry)
+}
+
+function variantLabelOf(entry: StoredResume): string {
+  return parseResumeVariantTitle(titleOf(entry))?.label || getResumeVariantLabel(entry.resumeData)
 }
 
 function isVariantResume(entry: StoredResume): boolean {
@@ -187,7 +200,7 @@ function buildResumeFamilies(entries: StoredResume[]): ResumeFamily[] {
 
     for (const candidate of entries) {
       if (candidate.id === entry.id || isVariantResume(candidate)) continue
-      const normalizedCandidateTitle = normalizeResumeTitle(candidate.resumeData.title)
+      const normalizedCandidateTitle = normalizeResumeTitle(titleOf(candidate))
       if (!normalizedCandidateTitle) continue
 
       let score = normalizedCandidateTitle === normalizedParentTitle ? 100 : 0
@@ -242,6 +255,9 @@ export default function UserCenter() {
   const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
   const [discoverResumeId, setDiscoverResumeId] = useState<string | undefined>(undefined)
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(new Set())
+  const [renameTarget, setRenameTarget] = useState<StoredResume | null>(null)
+  const [renameValue, setRenameValue] = useState("")
+  const [renaming, setRenaming] = useState(false)
 
   const refresh = useCallback(() => {
     let cancelled = false
@@ -299,7 +315,8 @@ export default function UserCenter() {
     const matches = (entry: StoredResume) =>
       !needle ||
       titleOf(entry).toLowerCase().includes(needle) ||
-      getResumeVariantLabel(entry.resumeData).toLowerCase().includes(needle)
+      storedTitleOf(entry).toLowerCase().includes(needle) ||
+      variantLabelOf(entry).toLowerCase().includes(needle)
 
     return resumeFamilies
       .map((family) => {
@@ -413,6 +430,36 @@ export default function UserCenter() {
       else next.add(id)
       return next
     })
+  }
+
+  const openRenameDialog = (entry: StoredResume) => {
+    setRenameTarget(entry)
+    setRenameValue(titleOf(entry))
+  }
+
+  const saveDisplayName = async () => {
+    if (!renameTarget) return
+    const nextName = renameValue.trim()
+    if (!nextName) {
+      toast({ title: "名称不能为空", description: "外部名称用于管理列表展示，请输入一个名称。", variant: "destructive" })
+      return
+    }
+    setRenaming(true)
+    try {
+      const updated = await updateEntryDisplayName(renameTarget.id, nextName)
+      setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      setRenameTarget(null)
+      setRenameValue("")
+      toast({ title: "名称已更新", description: "简历正文标题没有被修改。" })
+    } catch (e) {
+      toast({
+        title: "重命名失败",
+        description: e instanceof Error ? e.message : "未知错误",
+        variant: "destructive",
+      })
+    } finally {
+      setRenaming(false)
+    }
   }
 
   // 最近更新的一份简历，作为求职工具的默认操作对象
@@ -615,7 +662,7 @@ export default function UserCenter() {
           {items.length > 0 && (
             <>
               <Input
-                placeholder="搜索简历名称"
+                placeholder="搜索外部名称 / 正文标题"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 className="w-56"
@@ -698,7 +745,7 @@ export default function UserCenter() {
                 <TableHead className="text-center">层级</TableHead>
                 <TableHead className="text-center">头像</TableHead>
                 <TableHead>
-                  <div className="flex items-center justify-start">名称 <SortArrows field="name" /></div>
+                  <div className="flex items-center justify-start">外部名称 <SortArrows field="name" /></div>
                 </TableHead>
                 <TableHead className="text-center">
                   <div className="flex items-center justify-center">创建时间 <SortArrows field="createdAt" /></div>
@@ -759,10 +806,20 @@ export default function UserCenter() {
                       <TableCell>
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate font-semibold">{titleOf(parent)}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0 text-muted-foreground"
+                            title="修改外部名称"
+                            onClick={() => openRenameDialog(parent)}
+                          >
+                            <Icon icon="mdi:rename-outline" className="h-3.5 w-3.5" />
+                          </Button>
                           <Badge variant="outline">{family.variants.length} 子</Badge>
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           编号 {parent.id.slice(0, 8)}
+                          {hasSeparateDisplayName(parent) ? ` · 正文标题 ${storedTitleOf(parent)}` : ""}
                           {family.variants.length > 0 ? ` · 最近子简历更新 ${new Date(family.latestUpdatedAt).toLocaleString()}` : ""}
                         </div>
                       </TableCell>
@@ -834,10 +891,20 @@ export default function UserCenter() {
                           <div className="flex min-w-0 items-center gap-2 pl-3">
                             <Icon icon="mdi:subdirectory-arrow-right" className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <span className="truncate font-medium">{titleOf(it)}</span>
-                            <Badge variant="outline">{getResumeVariantLabel(it.resumeData)}</Badge>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 text-muted-foreground"
+                              title="修改外部名称"
+                              onClick={() => openRenameDialog(it)}
+                            >
+                              <Icon icon="mdi:rename-outline" className="h-3.5 w-3.5" />
+                            </Button>
+                            <Badge variant="outline">{variantLabelOf(it)}</Badge>
                           </div>
                           <div className="mt-1 pl-10 text-xs text-muted-foreground">
                             归属 {titleOf(parent)} · 编号 {it.id.slice(0, 8)}
+                            {hasSeparateDisplayName(it) ? ` · 正文标题 ${storedTitleOf(it)}` : ""}
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-center">{new Date(it.createdAt).toLocaleString()}</TableCell>
@@ -914,13 +981,64 @@ export default function UserCenter() {
               onClick={() => void handleCreateWithAI()}
               className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40"
             >
-              <span className="brand-gradient-bg grid h-11 w-11 place-items-center rounded-lg">
+              <span className="grid h-11 w-11 place-items-center rounded-lg bg-muted text-primary">
                 <Icon icon="mdi:robot-happy-outline" className="h-6 w-6" />
               </span>
               <span className="text-sm font-semibold">先和 AI 聊聊</span>
               <span className="text-xs text-muted-foreground">和创建助手对话，由 AI 引导你从零搭建整份简历。</span>
             </button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 修改外部名称：不触碰简历正文标题 */}
+      <Dialog open={!!renameTarget} onOpenChange={(open) => {
+        if (!open && !renaming) {
+          setRenameTarget(null)
+          setRenameValue("")
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveDisplayName()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>修改外部名称</DialogTitle>
+              <DialogDescription>
+                外部名称只用于列表、投递和面试选择，不会修改简历正文里的标题/姓名。
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              placeholder="例如：字节前端定制版"
+              autoFocus
+            />
+            {renameTarget ? (
+              <p className="text-xs text-muted-foreground">正文标题：{storedTitleOf(renameTarget)}</p>
+            ) : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={renaming}
+                onClick={() => {
+                  setRenameTarget(null)
+                  setRenameValue("")
+                }}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={renaming || !renameValue.trim()} className="gap-2">
+                {renaming ? <Icon icon="mdi:loading" className="agent-spin h-4 w-4" /> : null}
+                保存
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -957,7 +1075,7 @@ export default function UserCenter() {
                       <Icon icon="mdi:file-document-edit-outline" className="h-4 w-4 text-primary" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{it.resumeData.title || "未命名"}</span>
+                      <span className="block truncate text-sm font-medium">{titleOf(it)}</span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">
                         更新于 {new Date(it.updatedAt).toLocaleString()}
                       </span>
@@ -1016,7 +1134,7 @@ export default function UserCenter() {
                       <Icon icon="mdi:file-document-edit-outline" className="h-4 w-4 text-primary" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{it.resumeData.title || "未命名"}</span>
+                      <span className="block truncate text-sm font-medium">{titleOf(it)}</span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">
                         更新于 {new Date(it.updatedAt).toLocaleString()}
                       </span>

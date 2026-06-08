@@ -2,6 +2,7 @@
 
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { LOCAL_STORAGE_KEY } from "@/types/resume"
+import { getResumeDisplayName } from "@/lib/resume-display"
 
 const EDIT_PREFETCH_PREFIX = "resume.edit.prefetch."
 const RESUME_LIST_CACHE_KEY = "resume.list.cache.v1"
@@ -100,7 +101,7 @@ async function migrateLegacyLocalResumes(): Promise<StoredResume[]> {
   const migrated: StoredResume[] = []
   for (const entry of legacy) {
     if (!entry?.resumeData) continue
-    migrated.push(await createEntryFromData(entry.resumeData))
+    migrated.push(await createEntryFromData(entry.resumeData, getResumeDisplayName(entry)))
   }
 
   if (migrated.length > 0 && typeof window !== "undefined") {
@@ -135,18 +136,26 @@ export async function getResumeById(id: string): Promise<StoredResume | null> {
   }
 }
 
-export async function createEntryFromData(data: ResumeData): Promise<StoredResume> {
+export async function createEntryFromData(data: ResumeData, displayName?: string): Promise<StoredResume> {
   const payload = await request<{ resume: StoredResume }>("/api/resumes", {
     method: "POST",
-    body: JSON.stringify({ resumeData: data }),
+    body: JSON.stringify({ resumeData: data, displayName }),
   })
   return payload.resume
 }
 
-export async function updateEntryData(id: string, data: ResumeData): Promise<StoredResume> {
+export async function updateEntryData(id: string, data: ResumeData, displayName?: string): Promise<StoredResume> {
   const payload = await request<{ resume: StoredResume }>(`/api/resumes/${encodeURIComponent(id)}`, {
     method: "PUT",
-    body: JSON.stringify({ resumeData: data }),
+    body: JSON.stringify({ resumeData: data, displayName }),
+  })
+  return payload.resume
+}
+
+export async function updateEntryDisplayName(id: string, displayName: string): Promise<StoredResume> {
+  const payload = await request<{ resume: StoredResume }>(`/api/resumes/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ displayName }),
   })
   return payload.resume
 }

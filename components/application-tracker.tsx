@@ -36,7 +36,8 @@ import {
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 
-import type { ResumeData, StoredResume } from "@/types/resume"
+import type { StoredResume } from "@/types/resume"
+import { getResumeDisplayName } from "@/lib/resume-display"
 import type { ApplicationPriority, ApplicationStatus, JobApplication } from "@/types/application"
 import {
   ACTIVE_APPLICATION_STATUSES,
@@ -128,8 +129,8 @@ function formatDate(iso?: string): string {
   return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })
 }
 
-function resumeLabel(data: ResumeData): string {
-  return data.title?.trim() || "未命名简历"
+function resumeLabel(entry: StoredResume): string {
+  return getResumeDisplayName(entry)
 }
 
 function daysUntil(iso?: string): number | null {
@@ -193,7 +194,7 @@ export default function ApplicationTracker() {
 
   const resumeTitleById = useMemo(() => {
     const map = new Map<string, string>()
-    resumes.forEach((r) => map.set(r.id, resumeLabel(r.resumeData)))
+    resumes.forEach((r) => map.set(r.id, resumeLabel(r)))
     return map
   }, [resumes])
 
@@ -545,7 +546,7 @@ export default function ApplicationTracker() {
                   <SelectItem value={NONE_RESUME}>不关联简历</SelectItem>
                   {resumes.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
-                      {resumeLabel(r.resumeData)}
+                      {resumeLabel(r)}
                     </SelectItem>
                   ))}
                 </SelectContent>

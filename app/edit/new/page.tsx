@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import ResumeWorkspace from "@/components/workspace/resume-workspace"
 import type { ResumeData } from "@/types/resume"
 import { createEntryFromData, getResumeById } from "@/lib/storage"
-import { createJdVariantResumeData } from "@/lib/resume-relations"
+import { buildJdVariantTitle, createJdVariantResumeData, parseResumeVariantTitle } from "@/lib/resume-relations"
+import { getResumeDisplayName, getResumeStoredName } from "@/lib/resume-display"
 import { useToast } from "@/hooks/use-toast"
 
 export default function NewEditPage() {
@@ -41,12 +42,14 @@ function NewEditPageContent() {
   }, [])
 
   const [clonedData, setClonedData] = useState<ResumeData | undefined>()
+  const [draftDisplayName, setDraftDisplayName] = useState<string | undefined>()
   const [cloneLoaded, setCloneLoaded] = useState(!cloneId)
 
   useEffect(() => {
     if (!cloneId) {
       setCloneLoaded(true)
       setClonedData(undefined)
+      setDraftDisplayName(undefined)
       return
     }
     let cancelled = false
@@ -60,9 +63,19 @@ function NewEditPageContent() {
           }
           const parent = {
             id: entry.resumeData.parentResumeId || entry.id,
-            title: entry.resumeData.parentResumeTitle || entry.resumeData.title || "未命名",
+            title: entry.resumeData.parentResumeTitle || getResumeStoredName(entry),
           }
-          setClonedData(variantMode ? createJdVariantResumeData(entry.resumeData, parent) : { ...entry.resumeData })
+          const nextDisplayName = variantMode
+            ? buildJdVariantTitle(getResumeDisplayName(entry))
+            : getResumeDisplayName(entry)
+          const nextData = variantMode
+            ? {
+              ...createJdVariantResumeData(entry.resumeData, parent),
+              variantLabel: parseResumeVariantTitle(nextDisplayName)?.label || "岗位定制版",
+            }
+            : { ...entry.resumeData }
+          setClonedData(nextData)
+          setDraftDisplayName(nextDisplayName)
         }
       })
       .catch((error) => {
@@ -85,8 +98,8 @@ function NewEditPageContent() {
 
   const handleSave = async (current: ResumeData) => {
     try {
-      const entry = await createEntryFromData(current)
-      toast({ title: "保存成功", description: `已创建：${entry.resumeData.title}` })
+      const entry = await createEntryFromData(current, draftDisplayName)
+      toast({ title: "保存成功", description: `已创建：${getResumeDisplayName(entry)}` })
       router.replace(`/edit/${entry.id}`)
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "未知错误"

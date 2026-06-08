@@ -176,6 +176,8 @@ export interface ResumeData {
 export interface StoredResume {
   /** 唯一标识（使用 uuid/crypto.randomUUID 生成） */
   id: string
+  /** 用户中心、投递、面试等管理场景展示的名称；不影响简历正文标题/姓名 */
+  displayName?: string
   /** 创建时间 */
   createdAt: string
   /** 最近更新时间 */
