@@ -12,7 +12,7 @@ import {
   DISCOVER_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
-  INTERVIEWER_TOOL_SCHEMAS,
+  interviewerToolsForPlayMode,
   JD_RESCORE_TOOL_SCHEMAS,
   JD_TOOL_SCHEMAS,
   PROOFREAD_TOOL_SCHEMAS,
@@ -20,6 +20,7 @@ import {
   SCORE_TOOL_SCHEMAS,
 } from "@/lib/agent/tool-schemas"
 import type { AgentMode, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
+import { useInterviewRuntime } from "@/lib/interview-runtime-context"
 
 const MAX_ITERATIONS = 8
 const HISTORY_LIMIT = 24
@@ -27,7 +28,7 @@ const STREAM_FLUSH_MS = 80
 const DEFAULT_MAX_STREAM_CHARS = 12000
 const ANALYSIS_MAX_STREAM_CHARS = 3500
 
-function toolsForMode(mode: AgentMode) {
+function toolsForMode(mode: AgentMode, interviewPlayMode?: "practice" | "simulation") {
   switch (mode) {
     case "build":
       return BUILD_TOOL_SCHEMAS
@@ -38,7 +39,7 @@ function toolsForMode(mode: AgentMode) {
     case "jd":
       return JD_TOOL_SCHEMAS
     case "interview":
-      return INTERVIEWER_TOOL_SCHEMAS
+      return interviewerToolsForPlayMode(interviewPlayMode ?? "practice")
     case "interviewAnalysis":
       return INTERVIEW_ANALYSIS_TOOL_SCHEMAS
     case "proofread":
@@ -56,6 +57,7 @@ function toolsForMode(mode: AgentMode) {
 export function useAgent(workspace?: WorkspaceContextValue) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
+  const interviewRuntime = useInterviewRuntime()
   const [running, setRunning] = useState(false)
   const [rescoring, setRescoring] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +103,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
           jd: ws.jd,
           mode: ws.mode,
           staged: ws.staged,
+          interviewPlayMode: ws.mode === "interview" ? interviewRuntime?.playMode : undefined,
         }),
       }
 
@@ -145,7 +148,11 @@ export function useAgent(workspace?: WorkspaceContextValue) {
 
           const trimmedHistory = historyRef.current.slice(-HISTORY_LIMIT)
           const messages = [system, ...trimmedHistory]
-          const streamOptions = { tools: toolsForMode(ws.mode) }
+          const streamOptions = {
+            tools: toolsForMode(ws.mode, interviewRuntime?.playMode),
+          }
+
+          let interviewTerminated = false
 
           const { content, toolCalls } = await streamChat(
             messages,
@@ -229,7 +236,14 @@ export function useAgent(workspace?: WorkspaceContextValue) {
               name: call.function.name,
               content: result.message.slice(0, isReadonly ? 12000 : 1200),
             })
+
+            if (result.terminateInterview) {
+              interviewRuntime?.onInterviewTerminated()
+              interviewTerminated = true
+            }
           }
+
+          if (interviewTerminated) break
         }
       } catch (err) {
         finishStreamingText()
@@ -255,7 +269,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
         abortRef.current = null
       }
     },
-    [ws],
+    [ws, interviewRuntime],
   )
 
   /**
@@ -405,6 +419,7 @@ function stepLabel(tool: string): string {
     present_interview_question: "展示当前面试题",
     present_interview_questions: "展示面试问题",
     present_interview_report: "生成面试报告",
+    terminate_interview: "终止面试",
   }
   return map[tool] || tool
 }

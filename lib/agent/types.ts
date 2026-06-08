@@ -246,4 +246,6 @@ export interface ToolResult {
   change?: ChangeSet
   /** 展示类工具产出的卡片 */
   card?: AgentCard
+  /** 真实模拟：挂面试终止 */
+  terminateInterview?: boolean
 }

@@ -69,7 +69,7 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
         entryId={id}
         initialData={entry.resumeData}
         sessionId={searchParams.get("session") || undefined}
-        onBack={() => router.push("/resumes")}
+        onBack={() => router.push(mode === "interview" ? "/interviews" : "/resumes")}
       />
     </main>
   )

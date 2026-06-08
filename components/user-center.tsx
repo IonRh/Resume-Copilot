@@ -523,7 +523,7 @@ export default function UserCenter() {
           if (action.resumeId) openIntake("jd", action.resumeId)
           break
         case "interview":
-          if (action.resumeId) openIntake("interview", action.resumeId)
+          router.push(action.resumeId ? `/interviews?resume=${encodeURIComponent(action.resumeId)}` : "/interviews")
           break
         case "edit_resume":
           if (action.resumeId) {
@@ -576,8 +576,8 @@ export default function UserCenter() {
             {
               icon: "mdi:account-voice",
               title: "模拟面试",
-              desc: "选择简历，设定岗位，进入模拟面试台",
-              action: () => openIntake("interview"),
+              desc: "查看历史记录，发起新一轮模拟面试",
+              action: () => router.push("/interviews"),
             },
           ].map((tool) => (
             <button

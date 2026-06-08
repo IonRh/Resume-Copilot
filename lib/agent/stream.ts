@@ -13,6 +13,7 @@ export interface StreamOptions {
   tools?: unknown[]
   /** 与 tools 搭配的 tool_choice，默认 "auto" */
   toolChoice?: unknown
+  maxTokens?: number
 }
 
 /**
@@ -32,6 +33,7 @@ export async function streamChat(
   } else {
     body.useTools = opts.useTools !== false
   }
+  if (opts.maxTokens) body.max_tokens = opts.maxTokens
 
   const res = await fetch("/api/agent/chat", {
     method: "POST",

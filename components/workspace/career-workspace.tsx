@@ -21,6 +21,9 @@ import { buildJdVariantTitle, createJdVariantResumeData } from "@/lib/resume-rel
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
+import { touchInterviewSession, getInterviewSessionById, recordInterviewTermination } from "@/lib/interview-sessions"
+import { InterviewRuntimeProvider } from "@/lib/interview-runtime-context"
+import type { InterviewPlayMode } from "@/types/interview-session"
 import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
 import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
 import ResumePreview from "@/components/resume-preview"
@@ -51,18 +54,25 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
 }
 
 function InterviewWorkspace(props: CareerWorkspaceProps) {
-  const initialBriefing = useRef<{ briefing: string; sessionId: string } | null>(null)
+  const initialBriefing = useRef<{ briefing: string; sessionId: string; playMode: InterviewPlayMode } | null>(null)
   if (initialBriefing.current === null && typeof window !== "undefined") {
-    let next = { briefing: "", sessionId: "" }
+    let next = { briefing: "", sessionId: "", playMode: "practice" as InterviewPlayMode }
     try {
       const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
       if (raw) {
-        const parsed = JSON.parse(raw) as { mode?: string; resumeId?: string; briefing?: string; sessionId?: string }
+        const parsed = JSON.parse(raw) as {
+          mode?: string
+          resumeId?: string
+          briefing?: string
+          sessionId?: string
+          playMode?: InterviewPlayMode
+        }
         if (parsed.mode === props.mode && parsed.resumeId === props.entryId) {
           window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
           next = {
             briefing: parsed.briefing || "",
             sessionId: parsed.sessionId || "",
+            playMode: parsed.playMode === "simulation" ? "simulation" : "practice",
           }
         }
       }
@@ -73,14 +83,75 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
   }
   const [briefing] = useState<string>(() => initialBriefing.current?.briefing || "")
   const [sessionId] = useState<string>(() => props.sessionId || initialBriefing.current?.sessionId || `page-${Date.now()}`)
+  const [playMode] = useState<InterviewPlayMode>(() => {
+    const fromStorage = initialBriefing.current?.playMode
+    if (fromStorage === "simulation") return "simulation"
+    const sid = props.sessionId || initialBriefing.current?.sessionId || ""
+    if (sid) {
+      const record = getInterviewSessionById(sid)
+      if (record?.playMode === "simulation") return "simulation"
+    }
+    return "practice"
+  })
+  const [failModalOpen, setFailModalOpen] = useState(false)
   const storageScope = `${props.entryId}.${sessionId}`
   const analysisStorageKey = `resume.career.${props.mode}.${storageScope}.analysis`
   const interviewerStorageKey = `resume.career.${props.mode}.${storageScope}.interviewer`
 
+  const handleInterviewTerminated = useCallback(() => {
+    recordInterviewTermination(sessionId)
+    setFailModalOpen(true)
+  }, [sessionId])
+
   return (
-    <ResumeWorkspaceProvider initialData={props.initialData} storageKey={interviewerStorageKey}>
-      <CareerInner {...props} briefing={briefing} analysisStorageKey={analysisStorageKey} />
-    </ResumeWorkspaceProvider>
+    <InterviewRuntimeProvider
+      value={{
+        playMode,
+        sessionId,
+        onInterviewTerminated: handleInterviewTerminated,
+      }}
+    >
+      <ResumeWorkspaceProvider initialData={props.initialData} storageKey={interviewerStorageKey}>
+        <CareerInner
+          {...props}
+          briefing={briefing}
+          analysisStorageKey={analysisStorageKey}
+          interviewSessionId={sessionId}
+          interviewPlayMode={playMode}
+          onInterviewActivity={() => touchInterviewSession(sessionId)}
+        />
+      </ResumeWorkspaceProvider>
+
+      <Dialog open={failModalOpen} onOpenChange={() => {}}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-sm text-center sm:max-w-md"
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+        >
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-destructive/10">
+            <Icon icon="mdi:close-circle-outline" className="h-8 w-8 text-destructive" />
+          </div>
+          <DialogHeader className="items-center sm:text-center">
+            <DialogTitle className="text-lg">综合评估未达标，面试失利</DialogTitle>
+            <DialogDescription>
+              本场真实模拟面试已终止。你可以返回模拟面试大厅查看记录，或重新发起练习。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <Button
+              className="brand-gradient-bg w-full border-0 sm:w-auto"
+              onClick={() => {
+                setFailModalOpen(false)
+                props.onBack?.()
+              }}
+            >
+              返回模拟面试
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </InterviewRuntimeProvider>
   )
 }
 
@@ -109,7 +180,16 @@ function CareerInner({
   onBack,
   briefing,
   analysisStorageKey,
-}: CareerWorkspaceProps & { briefing?: string; analysisStorageKey?: string }) {
+  interviewSessionId,
+  interviewPlayMode,
+  onInterviewActivity,
+}: CareerWorkspaceProps & {
+  briefing?: string
+  analysisStorageKey?: string
+  interviewSessionId?: string
+  interviewPlayMode?: InterviewPlayMode
+  onInterviewActivity?: () => void
+}) {
   const ws = useResumeWorkspace()
   const profile = AGENT_PROFILES[mode]
   const briefingReadRef = useRef(false)
@@ -223,6 +303,11 @@ function CareerInner({
     if (prompt) setKickoff(prompt)
   }, [hydrated, kickoff, mode, profile.initialPrompt, profile.intake?.initialPrompt, setKickoff, turnCount])
 
+  useEffect(() => {
+    if (mode !== "interview" || !interviewSessionId || !onInterviewActivity) return
+    onInterviewActivity()
+  }, [interviewSessionId, mode, onInterviewActivity, turnCount])
+
   // 接受 AI 优化后自动回写到该简历，避免丢失（跳过首挂载的空写）
   useEffect(() => {
     if (!entryId) return
@@ -305,6 +390,11 @@ function CareerInner({
           <Badge variant="secondary" className="max-w-[180px] truncate text-xs">
             {resumeData.title || "未命名"}
           </Badge>
+          {mode === "interview" && interviewPlayMode === "simulation" ? (
+            <Badge variant="outline" className="text-xs text-amber-700 border-amber-200 bg-amber-50">
+              真实模拟
+            </Badge>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">

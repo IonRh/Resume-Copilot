@@ -13,6 +13,7 @@ interface RequestBody {
   tools?: unknown[]
   toolChoice?: unknown
   temperature?: number
+  max_tokens?: number
 }
 
 function resolveEndpoint(baseUrl: string): string {
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     messages: body.messages,
     stream: true,
     temperature: body.temperature ?? 0.4,
-    max_tokens: 1400,
+    max_tokens: body.max_tokens ?? 1400,
   }
   if (Array.isArray(body.tools)) {
     payload.tools = body.tools

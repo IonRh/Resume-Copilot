@@ -1,4 +1,5 @@
 import type { AgentMode, StagedChange, WorkspaceSelection } from "./types"
+import { interviewRoundSystemPromptBlock, resolveInterviewRoundFromBriefing } from "./interview-rounds"
 
 /**
  * 多个 Agent 的 system prompt 集中、分开管理。
@@ -62,6 +63,15 @@ export interface AgentIntakeConfig {
 /** briefing 通用要求：结构清晰、保留事实，供后续工作台使用 */
 const BRIEFING_NOTE =
   "briefing 用 Markdown 结构化，保留关键事实、去除寒暄，将作为进入工作台后的上下文。"
+
+export const INTERVIEW_SIMULATION_GUIDE = [
+  "",
+  "【真实模拟 · 挂面试 terminate_interview】",
+  "本场为「真实模拟」：表现若综合评估严重不达标，你应调用 terminate_interview 终止面试，不要再继续出题或追问。",
+  "适用情形示例：连续多题空泛套话、明显答非所问、核心技能/项目与岗位严重不符、经 redirect 后仍无法给出有效细节。",
+  "调用前可先对用户做 1 句客观说明（feedback）；调用后结束本场，不要输出评分报告。",
+  "不要滥用：仅当明确不达标时使用；偶发紧张或单题失误不足以挂面试。",
+].join("\n")
 
 export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
   build: {
@@ -257,15 +267,14 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     suggestions: ["开始模拟面试", "针对我的项目经历深挖提问", "进入下一题"],
     intake: {
       title: "模拟面试",
-      description: "先选择用于面试的简历，并告诉我目标岗位",
+      description: "先选择简历与面试轮次，并告诉我目标岗位",
       greeting: [
         "好的，我们来准备这场模拟面试。请告诉我：",
         "",
         "1. **目标岗位 / 公司**（如：字节跳动 后端开发实习）",
-        "2. 面试轮次或风格偏好（技术面 / 行为面 / 综合，可选）",
-        "3. 想重点考察的方向（如某个项目、某类技能，可选）",
+        "2. 想重点考察的方向（如某个项目、某类技能，可选）",
         "",
-        "如果有目标岗位 JD，也可以直接贴给我，我会让题目更贴合岗位。",
+        "面试轮次与面试官已在上方选好；如果有目标岗位 JD，也可以直接贴给我，我会让题目更贴合岗位。",
       ].join("\n"),
       placeholder: "例如：目标是后端开发实习，想重点考察分布式项目…",
       system: (outline) =>
@@ -285,7 +294,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
           BRIEFING_NOTE,
         ].join("\n"),
       initialPrompt:
-        "请基于我的简历与上方目标岗位研究简报开始模拟面试：先调用 plan_interview_questions 规划 5 道有针对性的核心问题（内部维护，不要展示给我），然后调用 present_interview_question 只展示第 1 题。之后我会逐题作答，你只作为面试官追问，并在合适时逐题展示下一题。",
+        "请按 system prompt 中指定的面试官身份开始：先自报身份，再调用 plan_interview_questions 规划 5 道贴合本轮类型与岗位的问题（内部维护，不要展示给我），然后调用 present_interview_question 只展示第 1 题。之后我会逐题作答，你只作为该面试官追问，并在合适时逐题展示下一题。",
       briefingTitle: "面试设定",
     },
   },
@@ -358,10 +367,20 @@ export function buildSystemPrompt(args: {
   jd: string
   mode: AgentMode
   staged?: StagedChange[]
+  interviewPlayMode?: "practice" | "simulation"
 }): string {
-  const { outline, selection, jd, mode, staged } = args
+  const { outline, selection, jd, mode, staged, interviewPlayMode } = args
   const profile = AGENT_PROFILES[mode] ?? AGENT_PROFILES.edit
-  const lines: string[] = [BASE_RULES, profile.guide, "", "【当前简历结构】", outline]
+  const lines: string[] = [BASE_RULES]
+
+  if (mode === "interview") {
+    lines.push(interviewRoundSystemPromptBlock(resolveInterviewRoundFromBriefing(jd)))
+    if (interviewPlayMode === "simulation") {
+      lines.push(INTERVIEW_SIMULATION_GUIDE)
+    }
+  }
+
+  lines.push(profile.guide, "", "【当前简历结构】", outline)
 
   if (selection) {
     lines.push(

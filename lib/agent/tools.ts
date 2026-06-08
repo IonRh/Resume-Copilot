@@ -868,6 +868,23 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
       return { ok: true, message: "已展示模拟面试卡片。", card }
     }
 
+    case "terminate_interview": {
+      const reason = str(args.reason) || "综合评估未达标"
+      const feedback = str(args.feedback)
+      return {
+        ok: true,
+        message: [
+          "已终止本场模拟面试。",
+          feedback ? `对用户说明：${feedback}` : "",
+          `判定依据：${reason}`,
+          "不要继续调用 present_interview_question 或追问。",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        terminateInterview: true,
+      }
+    }
+
     case "present_interview_report": {
       const card: AgentCard = {
         type: "interview_report",

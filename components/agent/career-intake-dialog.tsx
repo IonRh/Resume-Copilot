@@ -12,14 +12,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import type { ChatMessage } from "@/lib/agent/types"
+import type { StoredResume } from "@/types/resume"
+import type { InterviewPlayMode } from "@/types/interview-session"
+import { Markdown } from "./markdown"
 import { AGENT_PROFILES, INTAKE_TOOL } from "@/lib/agent/prompts"
 import { buildResumeOutline } from "@/lib/agent/changeset"
 import { streamChat } from "@/lib/agent/stream"
 import { INTERVIEW_INTAKE_TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
 import { getResumeById } from "@/lib/storage"
-import type { ChatMessage } from "@/lib/agent/types"
-import type { StoredResume } from "@/types/resume"
-import { Markdown } from "./markdown"
+import { extractInterviewTitle, upsertInterviewSession } from "@/lib/interview-sessions"
+import {
+  composeInterviewBriefing,
+  DEFAULT_INTERVIEW_ROUND_ID,
+  extractJobBriefing,
+  getInterviewRound,
+  INTERVIEW_ROUNDS,
+  interviewRoundIntakeNote,
+  type InterviewRoundId,
+} from "@/lib/agent/interview-rounds"
 
 type IntakeMode = "jd" | "interview"
 
@@ -34,6 +45,7 @@ interface CareerIntakeDialogProps {
   mode: IntakeMode
   resumes: StoredResume[]
   defaultResumeId?: string
+  defaultRoundId?: InterviewRoundId
   onOpenChange: (open: boolean) => void
 }
 
@@ -45,6 +57,7 @@ export default function CareerIntakeDialog({
   mode,
   resumes,
   defaultResumeId,
+  defaultRoundId,
   onOpenChange,
 }: CareerIntakeDialogProps) {
   const router = useRouter()
@@ -52,6 +65,8 @@ export default function CareerIntakeDialog({
   const intake = profile.intake!
 
   const [selectedId, setSelectedId] = useState<string | undefined>(defaultResumeId)
+  const [selectedRoundId, setSelectedRoundId] = useState<InterviewRoundId>(DEFAULT_INTERVIEW_ROUND_ID)
+  const [playMode, setPlayMode] = useState<InterviewPlayMode>("practice")
   const [messages, setMessages] = useState<Msg[]>([])
   const [streamText, setStreamText] = useState("")
   const [input, setInput] = useState("")
@@ -75,13 +90,15 @@ export default function CareerIntakeDialog({
       setError(null)
       setBusy(false)
       setSelectedId(defaultResumeId ?? resumes[0]?.id)
+      setSelectedRoundId(defaultRoundId ?? DEFAULT_INTERVIEW_ROUND_ID)
+      setPlayMode("practice")
       researchResultRef.current = ""
       finishGateUsedRef.current = false
     } else {
       abortRef.current?.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode])
+  }, [open, mode, defaultRoundId])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -95,8 +112,35 @@ export default function CareerIntakeDialog({
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const resume = resumes.find((item) => item.id === id)
+    const now = new Date().toISOString()
+    const campaignId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    if (mode === "interview") {
+      const jobBriefing = extractJobBriefing(briefing)
+      upsertInterviewSession({
+        id: sessionId,
+        campaignId,
+        resumeId: id,
+        resumeTitle: resume?.resumeData.title || "未命名",
+        title: extractInterviewTitle(briefing),
+        roundLabel: selectedRound.label,
+        roundId: selectedRoundId,
+        jobBriefing,
+        briefingPreview: briefing.slice(0, 300),
+        playMode,
+        status: "in_progress",
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
     try {
-      sessionStorage.setItem(CAREER_BRIEFING_KEY, JSON.stringify({ mode, resumeId: id, briefing, sessionId }))
+      sessionStorage.setItem(
+        CAREER_BRIEFING_KEY,
+        JSON.stringify({ mode, resumeId: id, briefing, sessionId, roundId: selectedRoundId, playMode }),
+      )
     } catch {
       /* 退化：无 briefing 也能进入 */
     }
@@ -110,6 +154,20 @@ export default function CareerIntakeDialog({
       .map((m) => m.content as string)
       .join("\n\n")
       .trim()
+
+  const selectedRound = getInterviewRound(selectedRoundId) ?? INTERVIEW_ROUNDS[0]
+
+  const buildBriefing = () => {
+    const history = briefingFromHistory()
+    if (mode !== "interview") return history
+    return composeInterviewBriefing(selectedRound, history)
+  }
+
+  const buildSystemPrompt = (outline: string) => {
+    const base = intake.system(outline)
+    if (mode !== "interview") return base
+    return [base, "", interviewRoundIntakeNote(selectedRound)].join("\n")
+  }
 
   const intakeTools = mode === "interview" ? [INTAKE_TOOL, ...INTERVIEW_INTAKE_TOOL_SCHEMAS] : [INTAKE_TOOL]
 
@@ -143,7 +201,7 @@ export default function CareerIntakeDialog({
   }
 
   const enoughAction = () => {
-    finalize(briefingFromHistory())
+    finalize(buildBriefing())
   }
 
   const send = async (raw: string) => {
@@ -163,7 +221,7 @@ export default function CareerIntakeDialog({
 
     const entry = await getResumeById(id)
     const outline = entry ? buildResumeOutline(entry.resumeData) : "（暂无法读取简历结构）"
-    const system: ChatMessage = { role: "system", content: intake.system(outline) }
+    const system: ChatMessage = { role: "system", content: buildSystemPrompt(outline) }
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -229,8 +287,8 @@ export default function CareerIntakeDialog({
           const result = researchResultRef.current
           finalize(
             mode === "interview" && result && !(briefing || "").includes(result.slice(0, 80))
-              ? [briefing || briefingFromHistory(), "", "【公司与岗位研究】", result].filter(Boolean).join("\n")
-              : briefing || briefingFromHistory(),
+              ? [briefing || buildBriefing(), "", "【公司与岗位研究】", result].filter(Boolean).join("\n")
+              : briefing || buildBriefing(),
           )
         }
         break
@@ -288,6 +346,38 @@ export default function CareerIntakeDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {mode === "interview" ? (
+            <>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="shrink-0 text-xs text-muted-foreground">面试轮次</span>
+                <Select value={selectedRoundId} onValueChange={(value) => setSelectedRoundId(value as InterviewRoundId)} disabled={busy}>
+                  <SelectTrigger className="h-9 flex-1">
+                    <SelectValue placeholder="选择面试轮次" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INTERVIEW_ROUNDS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="shrink-0 text-xs text-muted-foreground">面试模式</span>
+                <Select value={playMode} onValueChange={(value) => setPlayMode(value as InterviewPlayMode)} disabled={busy}>
+                  <SelectTrigger className="h-9 flex-1">
+                    <SelectValue placeholder="选择模式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="practice">学习练手</SelectItem>
+                    <SelectItem value="simulation">真实模拟</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          ) : null}
         </div>
 
         {/* 对话区 */}

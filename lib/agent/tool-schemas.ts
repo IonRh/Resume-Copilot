@@ -585,6 +585,28 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "terminate_interview",
+      description:
+        "【仅真实模拟模式】当候选人综合表现严重不达标（如连续空泛作答、答非所问、核心能力与岗位明显不符）时调用，立即终止本场模拟面试。调用后不得继续出题或追问。",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            description: "内部记录：终止判定的具体依据（如哪几题表现、缺什么能力）",
+          },
+          feedback: {
+            type: "string",
+            description: "给用户的一句话说明（可选，1-2 句，客观克制）",
+          },
+        },
+        required: ["reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "present_interview_report",
       description:
         "在模拟面试结束时，基于用户作答展示一份表现报告卡片（综合分、逐题评分与五维点评、优势与待提升）。仅在已经历若干轮问答后调用。",
@@ -636,6 +658,7 @@ export const READONLY_TOOLS = new Set([
   "present_interview_question",
   "present_interview_questions",
   "present_interview_report",
+  "terminate_interview",
 ])
 
 function pickTools(names: string[]): ToolSchema[] {
@@ -743,6 +766,18 @@ export const INTERVIEWER_TOOL_SCHEMAS = pickTools([
   "present_interview_question",
 ])
 
+/** 真实模拟：在出题工具之外挂载挂面试工具（学习练手不得挂载） */
+export const INTERVIEWER_SIMULATION_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "plan_interview_questions",
+  "present_interview_question",
+  "terminate_interview",
+])
+
+export function interviewerToolsForPlayMode(playMode: "practice" | "simulation" = "practice") {
+  return playMode === "simulation" ? INTERVIEWER_SIMULATION_TOOL_SCHEMAS : INTERVIEWER_TOOL_SCHEMAS
+}
+
 export const INTERVIEW_ANALYSIS_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_interview_report",
@@ -751,3 +786,76 @@ export const INTERVIEW_ANALYSIS_TOOL_SCHEMAS = pickTools([
 export const INTERVIEW_INTAKE_TOOL_SCHEMAS = pickTools([
   "research_company_interview",
 ])
+
+/** 多轮综合面试报告 Agent：仅输出 present_campaign_report */
+export const CAMPAIGN_REPORT_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "present_campaign_report",
+    description:
+      "基于用户选定的五轮模拟面试记录，生成完整面试报告（综合分、能力雷达、分轮评价、改进建议）。必须一次性输出完整结构。",
+    parameters: {
+      type: "object",
+      properties: {
+        overallScore: { type: "integer", description: "综合得分 0-100" },
+        overallLabel: { type: "string", description: "综合评级，如：及格、良好、优秀" },
+        summary: { type: "string", description: "总体评价段落" },
+        competencies: {
+          type: "array",
+          description: "六项能力雷达，score 为 0-100",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string" },
+              label: { type: "string" },
+              score: { type: "integer" },
+            },
+            required: ["key", "label", "score"],
+          },
+        },
+        rounds: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              roundId: { type: "string" },
+              roundLabel: { type: "string" },
+              score: { type: "integer", description: "该轮得分 0-100" },
+              summary: { type: "string" },
+              questions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    question: { type: "string" },
+                    starRating: { type: "integer", description: "1-5 星" },
+                    answer: { type: "string" },
+                    evaluation: { type: "string" },
+                    referenceAnswer: { type: "string" },
+                  },
+                  required: ["question", "answer", "evaluation"],
+                },
+              },
+            },
+            required: ["roundId", "roundLabel", "score", "summary", "questions"],
+          },
+        },
+        suggestions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              description: { type: "string" },
+              resources: { type: "array", items: { type: "string" } },
+            },
+            required: ["title", "description"],
+          },
+        },
+      },
+      required: ["overallScore", "overallLabel", "summary", "competencies", "rounds", "suggestions"],
+    },
+  },
+}
+
+export const INTERVIEW_REPORT_AGENT_TOOL_SCHEMAS = [CAMPAIGN_REPORT_TOOL]
