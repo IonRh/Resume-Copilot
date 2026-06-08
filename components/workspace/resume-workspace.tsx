@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
-import { createDefaultResumeData } from "@/lib/utils"
+import { createDefaultResumeData } from "@/lib/resume-core"
 import { loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
@@ -70,7 +70,6 @@ export default function ResumeWorkspace(props: ResumeWorkspaceProps) {
 function WorkspaceInner({
   initialData,
   template = "default",
-  entryId,
   onChange,
   onSave,
   onBack,

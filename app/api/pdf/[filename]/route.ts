@@ -1,4 +1,6 @@
-﻿import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+﻿import type { ResumeData } from "@/types/resume";
+import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+import { prepareResumeDataForPdf } from "@/lib/resume-core/pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,22 +37,6 @@ function getOrigin(req: Request) {
   return `${proto}://${host}`;
 }
 
-async function toDataUrlIfRemote(url?: string): Promise<string | undefined> {
-  if (!url) return undefined;
-  if (/^data:/i.test(url)) return url;
-  if (/^blob:/i.test(url)) return undefined;
-  if (!/^https?:\/\//i.test(url)) return url;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return url;
-    const ct = res.headers.get("content-type") || "application/octet-stream";
-    const buf = Buffer.from(await res.arrayBuffer());
-    return `data:${ct};base64,${buf.toString("base64")}`;
-  } catch {
-    return url;
-  }
-}
-
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ filename: string }> | { filename: string } }
@@ -63,7 +49,7 @@ export async function POST(
     ]);
 
     // Body parsing: JSON, form, or raw text(JSON)
-    let resumeData: import("@/types/resume").ResumeData | null = null;
+    let resumeData: ResumeData | null = null;
     const ct = (req.headers.get("content-type") || "").toLowerCase();
     if (ct.includes("application/json")) {
       const body = await req.json().catch(() => null);
@@ -114,7 +100,12 @@ export async function POST(
     const launchArgs = usingSystemChrome
       ? ["--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
       : chromium.args;
-    const headless: import('puppeteer-core').LaunchOptions["headless"] = usingSystemChrome ? true : chromium.headless;
+    const chromiumLaunchDefaults = chromium as unknown as Pick<
+      import("puppeteer-core").LaunchOptions,
+      "headless"
+    >;
+    const headless: import("puppeteer-core").LaunchOptions["headless"] =
+      usingSystemChrome ? true : (chromiumLaunchDefaults.headless ?? true);
     const browser = await puppeteer.launch({
       args: launchArgs,
       defaultViewport: { width: 1200, height: 1600, deviceScaleFactor: 2 },
@@ -142,10 +133,7 @@ export async function POST(
     }
 
     // Prepare data: inline avatar if remote
-    const preparedData: import("@/types/resume").ResumeData = { ...resumeData } as import("@/types/resume").ResumeData;
-    if (preparedData.avatar) {
-      preparedData.avatar = await toDataUrlIfRemote(preparedData.avatar);
-    }
+    const preparedData = await prepareResumeDataForPdf(resumeData);
     await page.evaluateOnNewDocument((data) => {
       try {
         window.sessionStorage.setItem("resumeData", JSON.stringify(data));

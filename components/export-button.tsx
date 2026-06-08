@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@iconify/react";
 import type { ResumeData } from "@/types/resume";
-import { generatePdfFilename, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { generatePdfFilename, prepareResumeDataForPreview } from "@/lib/resume-core";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +56,7 @@ export function ExportButton({
     ]);
 
     const root = createRoot(host);
-    root.render(React.createElement(ResumePreview, { resumeData }));
+    root.render(React.createElement(ResumePreview, { resumeData: prepareResumeDataForPreview(resumeData) }));
 
     // 等待渲染与布局生效
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));

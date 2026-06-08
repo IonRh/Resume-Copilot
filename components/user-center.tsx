@@ -20,7 +20,7 @@ import { Icon } from "@iconify/react"
 import { useToast } from "@/hooks/use-toast"
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { createEntryFromData, deleteResumes, getAllResumes, getCachedResumes, loadDefaultTemplate, loadExampleTemplate } from "@/lib/storage"
-import { createDefaultResumeData } from "@/lib/utils"
+import { createDefaultResumeData } from "@/lib/resume-core"
 import {
   getResumeParentId,
   getResumeVariantLabel,

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ResumeData } from "@/types/resume";
-import { generatePdfFilename } from "@/lib/utils";
+import { generatePdfFilename, prepareResumeDataForPreview } from "@/lib/resume-core";
 import ResumePreview from "./resume-preview";
 import PdfLoading from "@/components/pdf-loading";
 
@@ -58,19 +58,6 @@ async function generateServerPdf(resumeData: ResumeData): Promise<Blob> {
 
 export type Mode = "loading" | "server" | "fallback";
 
-function normalizeResumeDataForAvatar(resumeData: ResumeData): ResumeData {
-  const section = resumeData.personalInfoSection;
-  if (!section || section.avatarType !== "idPhoto") return resumeData;
-  if (section.avatarShape === "square") return resumeData;
-  return {
-    ...resumeData,
-    personalInfoSection: {
-      ...section,
-      avatarShape: "square",
-    },
-  };
-}
-
 export function PDFViewer({
   resumeData,
   onModeChange,
@@ -96,7 +83,7 @@ export function PDFViewer({
   const [error, setError] = useState<string | null>(null);
   const hasServerPdfRef = useRef(false);
   const normalizedResumeData = useMemo(
-    () => normalizeResumeDataForAvatar(resumeData),
+    () => prepareResumeDataForPreview(resumeData),
     [resumeData]
   );
   const resumeKey = useMemo(() => JSON.stringify(normalizedResumeData), [normalizedResumeData]);
@@ -281,7 +268,7 @@ export function PDFDownloadLink({
     e.preventDefault();
     if (loading) return;
     setLoading(true);
-    const normalized = normalizeResumeDataForAvatar(resumeData);
+    const normalized = prepareResumeDataForPreview(resumeData);
     try {
       const available = FORCE_PRINT ? false : await checkServerPdfAvailable();
       if (!available) {
@@ -320,4 +307,3 @@ export function PDFDownloadLink({
 }
 
 export default PDFViewer;
-

@@ -1,5 +1,6 @@
 import type { ResumeData } from "@/types/resume";
 import PrintContent from "@/components/print-content";
+import { normalizeResumeData } from "@/lib/resume-core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ function decodeDataParam(data?: string): ResumeData | null {
   if (!data) return null;
   try {
     const json = Buffer.from(decodeURIComponent(data), "base64").toString("utf-8");
-    return JSON.parse(json) as ResumeData;
+    return normalizeResumeData(JSON.parse(json) as ResumeData);
   } catch {
     return null;
   }

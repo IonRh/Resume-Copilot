@@ -1,11 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 "use client"
 
-import { useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import type { WorkspaceSelection } from "@/lib/agent/types"
 import { docToText } from "@/lib/agent/changeset"
+import { sortedByColumn, sortedByOrder } from "@/lib/resume-core"
 import RichTextRenderer from "./rich-text-renderer"
 
 interface ResumePreviewProps {
@@ -72,15 +73,34 @@ export default function ResumePreview({
   const [jobIntentionScale, setJobIntentionScale] = useState<number>(1);
   const [jobIntentionFontScale, setJobIntentionFontScale] = useState<number>(1);
 
+  const orderedJobIntentionItems = useMemo(
+    () => sortedByOrder(resumeData.jobIntentionSection?.items || []),
+    [resumeData.jobIntentionSection?.items],
+  );
+  const personalInfo = useMemo(
+    () => sortedByOrder(resumeData.personalInfoSection?.personalInfo || []),
+    [resumeData.personalInfoSection?.personalInfo],
+  );
+  const orderedModules = useMemo(
+    () =>
+      sortedByOrder(resumeData.modules).map((module) => ({
+        ...module,
+        rows: sortedByOrder(module.rows).map((row) => ({
+          ...row,
+          elements: sortedByColumn(row.elements),
+        })),
+      })),
+    [resumeData.modules],
+  );
+
   // 等高策略：测量左侧真实高度，设置右侧容器高度；
   // 父容器使用 items-start，避免 items-stretch 与右侧固定高度形成“锁高”导致头像不随左侧收缩。
-  // 格式化求职意向显示
-  const formatJobIntention = () => {
+  const jobIntentionText = useMemo(() => {
     if (!resumeData.jobIntentionSection?.enabled || !resumeData.jobIntentionSection?.items?.length) {
       return null;
     }
 
-    const items = resumeData.jobIntentionSection.items
+    const items = orderedJobIntentionItems
       .filter(item => {
         // 过滤掉空值的项
         if (item.type === 'salary') {
@@ -88,20 +108,19 @@ export default function ResumePreview({
         }
         return item.value && item.value.trim() !== '';
       })
-      .sort((a, b) => a.order - b.order)
       .map(item => `${item.label}：${item.value}`)
       .join(' ｜ ');
 
     return items || null;
-  };
+  }, [
+    orderedJobIntentionItems,
+    resumeData.jobIntentionSection?.enabled,
+    resumeData.jobIntentionSection?.items?.length,
+  ]);
 
-  const jobIntentionText = formatJobIntention();
   const avatarType = resumeData.personalInfoSection?.avatarType === "idPhoto" ? "idPhoto" : "default";
   const isIdPhoto = avatarType === "idPhoto";
   const hasIdPhotoHeader = !!(resumeData.avatar && !resumeData.centerTitle && isIdPhoto);
-  const personalInfo = (resumeData.personalInfoSection?.personalInfo || [])
-    .slice()
-    .sort((a, b) => a.order - b.order);
   const layoutMode = resumeData.personalInfoSection?.layout?.mode ?? "grid";
   const itemsPerRow = resumeData.personalInfoSection?.layout?.itemsPerRow || 2;
   const isInline = layoutMode === "inline";
@@ -510,9 +529,7 @@ export default function ResumePreview({
 
       {/* 简历模块 */}
       <div className="space-y-6">
-        {resumeData.modules
-          .slice()
-          .sort((a, b) => a.order - b.order)
+        {orderedModules
           .map((module) => (
             <div key={module.id} className="resume-module" data-module-id={module.id}>
               <div
@@ -536,8 +553,6 @@ export default function ResumePreview({
               <div className="space-y-[0.3em]">
                 {/* 渲染行 */}
                 {module.rows
-                  .slice()
-                  .sort((a, b) => a.order - b.order)
                   .map((row, rowIdx) => (
                     row.type === 'tags' ? (
                       <div
@@ -602,7 +617,7 @@ export default function ResumePreview({
       </div>
 
       {/* 空状态提示 */}
-      {resumeData.modules.length === 0 && (
+      {orderedModules.length === 0 && (
         <div className="text-center py-12 text-muted-foreground no-print">
           <Icon
             icon="mdi:file-document-outline"

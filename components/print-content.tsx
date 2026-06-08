@@ -2,16 +2,17 @@
 
 import React, { useState } from "react";
 import type { ResumeData } from "@/types/resume";
+import { prepareResumeDataForPreview } from "@/lib/resume-core";
 import ResumePreview from "@/components/resume-preview";
 
 export default function PrintContent({ initialData, autoPrint = false }: { initialData?: ResumeData | null; autoPrint?: boolean }) {
   // 避免在 effect 中同步 setState：使用惰性初始化从 sessionStorage 恢复
   const [resumeData] = useState<ResumeData | null>(() => {
-    if (initialData) return initialData;
+    if (initialData) return prepareResumeDataForPreview(initialData);
     if (typeof window !== "undefined") {
       try {
         const s = sessionStorage.getItem("resumeData");
-        if (s) return JSON.parse(s) as ResumeData;
+        if (s) return prepareResumeDataForPreview(JSON.parse(s) as ResumeData);
       } catch { }
     }
     return null;

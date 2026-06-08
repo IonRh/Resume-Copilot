@@ -28,10 +28,15 @@ export async function GET() {
       : chromium.args;
     // Puppeteer v23 headless option type is boolean | 'shell'.
     // Use boolean true for both system Chrome (new headless) and bundled Chromium default.
-    const headless: import('puppeteer-core').LaunchOptions["headless"] = usingSystemChrome ? true : chromium.headless;
+    const chromiumLaunchDefaults = chromium as unknown as Pick<
+      import("puppeteer-core").LaunchOptions,
+      "defaultViewport" | "headless"
+    >;
+    const headless: import("puppeteer-core").LaunchOptions["headless"] =
+      usingSystemChrome ? true : (chromiumLaunchDefaults.headless ?? true);
     const browser = await puppeteer.launch({
       args: launchArgs,
-      defaultViewport: chromium.defaultViewport,
+      defaultViewport: chromiumLaunchDefaults.defaultViewport ?? { width: 1200, height: 1600, deviceScaleFactor: 2 },
       executablePath: resolvedPath,
       headless,
     });

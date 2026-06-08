@@ -31,7 +31,8 @@ import { Icon } from "@iconify/react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import type { JobIntentionItem, JobIntentionSection } from "@/types/resume";
-import { createNewJobIntentionItem } from "@/lib/utils";
+import { createNewJobIntentionItem } from "@/lib/resume-core";
+import { reindexOrder, sortedByOrder } from "@/lib/resume-core";
 
 interface JobIntentionEditorProps {
   jobIntentionSection?: JobIntentionSection;
@@ -64,18 +65,12 @@ export default function JobIntentionEditor({
 
     if (source.index === destination.index) return;
 
-    const sortedItems = [...items].sort((a, b) => a.order - b.order);
+    const sortedItems = sortedByOrder(items);
     const [movedItem] = sortedItems.splice(source.index, 1);
     sortedItems.splice(destination.index, 0, movedItem);
 
-    // 更新order字段
-    const updatedItems = sortedItems.map((item, index) => ({
-      ...item,
-      order: index
-    }));
-
     onUpdate({
-      items: updatedItems,
+      items: reindexOrder(sortedItems),
       enabled
     });
   };
@@ -205,8 +200,7 @@ export default function JobIntentionEditor({
           <Droppable droppableId="job-intention-list">
             {(provided) => (
               <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-3">
-                {items
-                  .sort((a, b) => a.order - b.order)
+                {sortedByOrder(items)
                   .map((item, index) => (
                     <Draggable key={item.id} draggableId={item.id} index={index}>
                       {(provided, snapshot) => (

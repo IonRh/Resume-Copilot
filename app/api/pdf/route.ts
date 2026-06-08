@@ -1,4 +1,7 @@
-﻿import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+﻿import type { ResumeData } from "@/types/resume";
+import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+import { generatePdfFilename } from "@/lib/resume-core/export";
+import { prepareResumeDataForPdf } from "@/lib/resume-core/pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,22 +20,6 @@ function getOrigin(req: Request) {
   return `${proto}://${host}`;
 }
 
-async function toDataUrlIfRemote(url?: string): Promise<string | undefined> {
-  if (!url) return undefined;
-  if (/^data:/i.test(url)) return url;
-  if (/^blob:/i.test(url)) return undefined; // cannot dereference blob: across contexts
-  if (!/^https?:\/\//i.test(url)) return url;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return url;
-    const ct = res.headers.get("content-type") || "application/octet-stream";
-    const buf = Buffer.from(await res.arrayBuffer());
-    return `data:${ct};base64,${buf.toString("base64")}`;
-  } catch {
-    return url;
-  }
-}
-
 export async function POST(req: Request) {
   try {
     configureChromiumRuntimeEnv();
@@ -41,7 +28,7 @@ export async function POST(req: Request) {
       import("puppeteer-core"),
     ]);
     // 兼容多种提交方式：application/json、text/plain(JSON字符串)、form-urlencoded/form-data（字段名：resumeData）
-    let resumeData: import("@/types/resume").ResumeData | null = null;
+    let resumeData: ResumeData | null = null;
     const ct = (req.headers.get("content-type") || "").toLowerCase();
     if (ct.includes("application/json")) {
       const body = await req.json().catch(() => null);
@@ -96,7 +83,12 @@ export async function POST(req: Request) {
         "--disable-dev-shm-usage",
       ]
       : chromium.args;
-    const headless: import('puppeteer-core').LaunchOptions["headless"] = usingSystemChrome ? true : chromium.headless;
+    const chromiumLaunchDefaults = chromium as unknown as Pick<
+      import("puppeteer-core").LaunchOptions,
+      "headless"
+    >;
+    const headless: import("puppeteer-core").LaunchOptions["headless"] =
+      usingSystemChrome ? true : (chromiumLaunchDefaults.headless ?? true);
     const browser = await puppeteer.launch({
       args: launchArgs,
       defaultViewport: { width: 1200, height: 1600, deviceScaleFactor: 2 },
@@ -120,10 +112,7 @@ export async function POST(req: Request) {
     } catch { /* non-fatal */ }
     // 在任何脚本运行之前，将简历数据写入 sessionStorage，避免超长 URL 及 431 错误
     // 同时将远端头像资源内联为 data URL，避免因网络或拦截导致图片缺失
-    const preparedData: import("@/types/resume").ResumeData = { ...resumeData } as import("@/types/resume").ResumeData;
-    if (preparedData.avatar) {
-      preparedData.avatar = await toDataUrlIfRemote(preparedData.avatar);
-    }
+    const preparedData = await prepareResumeDataForPdf(resumeData);
     await page.evaluateOnNewDocument((data) => {
       try {
         window.sessionStorage.setItem("resumeData", JSON.stringify(data));
@@ -191,7 +180,6 @@ export async function POST(req: Request) {
     await browser.close();
 
     // Generate filename and provide ASCII fallback
-    const { generatePdfFilename } = await import("@/lib/utils");
     const rawName = generatePdfFilename(String(resumeData?.title || "resume"));
     const asciiFallback = rawName.replace(/[^\x20-\x7E]/g, "_");
     const utf8Star = `UTF-8''${encodeURIComponent(rawName)}`;

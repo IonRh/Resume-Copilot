@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import type { ResumeData, StoredResume } from "@/types/resume"
-import { validateResumeData } from "@/lib/utils"
+import { normalizeResumeData as normalizeResumeCoreData, validateResumeData } from "@/lib/resume-core"
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const RESUME_STORE_PATH = path.join(DATA_DIR, "resumes.json")
@@ -30,11 +30,7 @@ function withLock<T>(task: () => Promise<T>): Promise<T> {
 }
 
 function normalizeResumeData(data: ResumeData, createdAt: string, updatedAt: string): ResumeData {
-  const normalized: ResumeData = {
-    ...data,
-    createdAt: data.createdAt || createdAt,
-    updatedAt,
-  }
+  const normalized = normalizeResumeCoreData(data, { createdAt, updatedAt })
   const { isValid, errors } = validateResumeData(normalized)
   if (!isValid) {
     throw new Error(`简历数据校验失败：${errors.join("；")}`)

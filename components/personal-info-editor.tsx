@@ -33,7 +33,8 @@ import { Icon } from "@iconify/react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import type { PersonalInfoItem, PersonalInfoSection, PersonalInfoLayout } from "@/types/resume";
-import { createNewPersonalInfoItem } from "@/lib/utils";
+import { createNewPersonalInfoItem } from "@/lib/resume-core";
+import { reindexOrder, sortedByOrder } from "@/lib/resume-core";
 import IconPicker from "./icon-picker";
 
 interface PersonalInfoEditorProps {
@@ -72,21 +73,14 @@ export default function PersonalInfoEditor({
 
     if (source.index === destination.index) return;
 
-    const sortedPersonalInfo = [...personalInfo]
-      .sort((a, b) => a.order - b.order);
+    const sortedPersonalInfo = sortedByOrder(personalInfo);
 
     const [movedItem] = sortedPersonalInfo.splice(source.index, 1);
     sortedPersonalInfo.splice(destination.index, 0, movedItem);
 
-    // 更新order字段
-    const updatedPersonalInfo = sortedPersonalInfo.map((item, index) => ({
-      ...item,
-      order: index
-    }));
-
     onUpdate({
       ...personalInfoSection,
-      personalInfo: updatedPersonalInfo
+      personalInfo: reindexOrder(sortedPersonalInfo)
     }, avatarUrl);
   };
 
@@ -386,8 +380,7 @@ export default function PersonalInfoEditor({
           <Droppable droppableId="personal-info-list">
             {(provided) => (
               <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-3">
-                {personalInfo
-                  .sort((a, b) => a.order - b.order)
+                {sortedByOrder(personalInfo)
                   .map((item, index) => (
                     <Draggable key={item.id} draggableId={item.id} index={index}>
                       {(provided, snapshot) => (

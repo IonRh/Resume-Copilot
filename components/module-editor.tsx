@@ -21,71 +21,21 @@ import FloatingActionBar from "./floating-action-bar"
 import RichTextInput from "./rich-text-input"
 import TagInput from "./tag-input"
 import { DragDropContext, Droppable, Draggable, DropResult, DraggableProvidedDragHandleProps } from "@hello-pangea/dnd"
+import {
+  createEmptyResumeRow,
+  createNewModule,
+  createTagsRow,
+  reindexOrder,
+  sortedByOrder,
+} from "@/lib/resume-core"
 
 interface ModuleEditorProps {
   modules: ResumeModule[]
   onUpdate: (modules: ResumeModule[]) => void
 }
 
-/**
- * 生成唯一ID
- */
-const generateId = () => `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-/**
- * 创建新模块
- */
-const createNewModule = (order: number): ResumeModule => ({
-  id: generateId(),
-  title: "新模块",
-  icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>',
-  order,
-  rows: [],
-})
-
-/**
- * 创建新行
- */
-const createNewRow = (columns: 1 | 2 | 3 | 4, order: number): ModuleContentRow => {
-  const elements: ModuleContentElement[] = []
-  for (let i = 0; i < columns; i++) {
-    elements.push({
-      id: generateId(),
-      content: {
-        type: 'doc',
-        content: [
-          {
-            type: 'paragraph',
-            content: [],
-          },
-        ],
-      },
-      columnIndex: i,
-    })
-  }
-
-  return {
-    id: generateId(),
-    type: 'rich',
-    columns,
-    elements,
-    order,
-  }
-}
-
-/**
- * 创建标签行
- */
-const createNewTagsRow = (order: number): ModuleContentRow => {
-  return {
-    id: generateId(),
-    type: 'tags',
-    columns: 1,
-    elements: [],
-    tags: [],
-    order,
-  }
-}
+const DEFAULT_EDITOR_MODULE_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>'
 
 export default function ModuleEditor({ modules, onUpdate }: ModuleEditorProps) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
@@ -94,7 +44,7 @@ export default function ModuleEditor({ modules, onUpdate }: ModuleEditorProps) {
    * 添加新模块
    */
   const addModule = () => {
-    const newModule = createNewModule(modules.length)
+    const newModule = { ...createNewModule(modules.length), icon: DEFAULT_EDITOR_MODULE_ICON }
     const updatedModules = [...modules, newModule]
     onUpdate(updatedModules)
     setExpandedModules((prev) => new Set([...prev, newModule.id]))
@@ -133,12 +83,7 @@ export default function ModuleEditor({ modules, onUpdate }: ModuleEditorProps) {
     const updatedModules = [...modules]
     const [movedModule] = updatedModules.splice(result.source.index, 1)
     updatedModules.splice(result.destination.index, 0, movedModule)
-
-    updatedModules.forEach((module, index) => {
-      module.order = index
-    })
-
-    onUpdate(updatedModules)
+    onUpdate(reindexOrder(updatedModules))
   }
 
   /**
@@ -173,8 +118,7 @@ export default function ModuleEditor({ modules, onUpdate }: ModuleEditorProps) {
         <Droppable droppableId="modules-list">
           {(provided) => (
             <div className="space-y-3" {...provided.droppableProps} ref={provided.innerRef}>
-              {modules
-                .sort((a, b) => a.order - b.order)
+              {sortedByOrder(modules)
                 .map((module, index) => (
                   <Draggable key={module.id} draggableId={module.id} index={index}>
                     {(provided, snapshot) => (
@@ -242,13 +186,9 @@ function ModuleItem({
     const rows = [...module.rows]
     const afterIndex = afterRowId ? rows.findIndex((r) => r.id === afterRowId) : -1
     const insertIndex = afterIndex >= 0 ? afterIndex + 1 : rows.length
-    const newRow = createNewRow(columns, insertIndex)
+    const newRow = createEmptyResumeRow(columns, insertIndex)
     rows.splice(insertIndex, 0, newRow)
-    // 重新计算 order，保证排序正确
-    rows.forEach((r, i) => {
-      r.order = i
-    })
-    onUpdate({ rows })
+    onUpdate({ rows: reindexOrder(rows) })
   }
 
   /**
@@ -258,10 +198,9 @@ function ModuleItem({
     const rows = [...module.rows]
     const afterIndex = afterRowId ? rows.findIndex((r) => r.id === afterRowId) : -1
     const insertIndex = afterIndex >= 0 ? afterIndex + 1 : rows.length
-    const newRow = createNewTagsRow(insertIndex)
+    const newRow = createTagsRow(insertIndex)
     rows.splice(insertIndex, 0, newRow)
-    rows.forEach((r, i) => { r.order = i })
-    onUpdate({ rows })
+    onUpdate({ rows: reindexOrder(rows) })
   }
 
   /**
@@ -278,7 +217,7 @@ function ModuleItem({
    * 删除行
    */
   const removeRow = (rowId: string) => {
-    const updatedRows = module.rows.filter((row) => row.id !== rowId)
+    const updatedRows = reindexOrder(module.rows.filter((row) => row.id !== rowId))
     onUpdate({ rows: updatedRows })
   }
 
@@ -378,8 +317,7 @@ function ModuleItem({
               {module.rows.length === 0 ? (
                 <EmptyRowPlaceholder onAddRow={addRow} onAddTagsRow={() => addTagsRow()} />
               ) : (
-                module.rows
-                  .sort((a, b) => a.order - b.order)
+                sortedByOrder(module.rows)
                   .map((row) => (
                     <ContentRowEditor
                       key={row.id}

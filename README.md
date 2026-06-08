@@ -1,25 +1,19 @@
 ﻿# 简历生成器
-> ⭐⭐⭐ **如果这个项目对您有帮助，请给个小星星！** 您的支持是我持续改进和添加新功能的动力。
 
-一个灵活且功能强大的简历构建和导出工具，帮助用户快速创建、编辑和导出干净、简洁而又专业的简历，支持所见即所得。简历数据由后台统一维护，用户只需要创建、编辑和导出成品。
+一个面向 AI-Native 简历工作流的在线编辑、管理和导出工具。系统以自研 `resume-core` 作为基础简历能力内核，对外保持稳定的 `ResumeData`、存储 API 与 Agent 工具接口，内部统一负责数据规范化、富文本转换、结构操作、校验与 AI 大纲生成。
 
 ## 功能特点
 
 - **用户中心**: 首页集中管理你的简历，支持检索、排序、批量选择与删除
 - **后台存储**: 多份简历由服务端 API 统一读写，数据维护不暴露给用户
 - **简历编辑**: 直观的界面，轻松编辑个人信息和简历内容
-- **模块化设计**: 支持添加、删除和重排简历模块
+- **模块化设计**: 支持添加、删除和重排简历模块，底层由自研内核统一维护 order、id 与行列结构
 - **实时预览**: 即时查看简历编辑效果
 - **PDF 导出**: 优先由服务端 Chromium 渲染同一份 HTML/CSS 生成干净 PDF；不可用时自动降级浏览器打印，并给出引导
 - **图片导出**: 支持导出为 PNG、JPG、WEBP、SVG 等图片格式
 - **富文本支持**: 支持自由设置文本格式，如字体、文字大小、颜色、对齐方式以及是否加粗、URL 链接等
 - **自适应**: 支持不同模块/布局自由组合，自动调整元素尺寸
-
-<p align="left">
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwzdnzd%2Fresume&env=SITE_PASSWORD&project-name=resume&repository-name=resume" target="_blank" rel="noopener noreferrer"><img src="https://vercel.com/button" alt="Vercel" height="30"></a>
-  &nbsp;
-  <a href="https://edgeone.ai/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fwzdnzd%2Fresume&env=SITE_PASSWORD&project-name=resume&repository-name=resume" target="_blank" rel="noopener noreferrer"><img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" alt="EdgeOne Pages" height="30"></a>
-</p>
+- **AI 兼容内核**: 保持 Agent tool schema 和 API 响应不变，内部重构不影响 AI 正常运行
 
 ## 页面示例截图
 1. 用户中心：后台集中管理多份简历
@@ -99,7 +93,6 @@ pnpm build
 ├── components/
 │  ├── user-center.tsx                  # 用户中心（首页）
 │  ├── export-button.tsx                # 一键导出（PDF/图片）
-│  ├── resume-builder.tsx               # 简历编辑主界面
 │  ├── resume-preview.tsx               # HTML 预览（PDF 与预览同源 HTML/CSS）
 │  ├── print-content.tsx                # 打印内容容器
 │  ├── pdf-viewer.tsx                   # 自动选择：服务端 PDF 或浏览器打印
@@ -108,6 +101,12 @@ pnpm build
 │  ├── use-mobile.ts
 │  └── use-toast.ts
 ├── lib/
+│  ├── resume-core/                     # 自研简历基础能力内核
+│  │  ├── document.ts                   # Tiptap 文档与纯文本/样式转换
+│  │  ├── factory.ts                    # 默认简历、模块、行、个人信息构建
+│  │  ├── normalize.ts                  # 数据规范化与校验
+│  │  ├── operations.ts                 # 不可变查找、更新、排序
+│  │  └── outline.ts                    # AI 可读简历大纲生成
 │  ├── server/resume-store.ts           # 服务端简历文件仓库
 │  ├── utils.ts                         # 通用工具
 │  └── storage.ts                       # 后台简历 API 客户端
@@ -140,7 +139,13 @@ export interface ResumeData {
 ```
 
 ## 功能说明
-> 基于 [resume-builder](https://github.com/magicyan418/resume-builder) 二次开发，感谢原作者的开源。
+
+### 简历基础内核
+
+- `lib/resume-core` 是简历数据和 AI 操作的基础能力层，不依赖页面组件实现。
+- 外部仍使用 `ResumeData`、`StoredResume`、`/api/resumes`、`/api/pdf` 与现有 Agent tool schema。
+- 存储写入时会统一规范化旧数据，修复 order、行列、个人信息布局和富文本空文档等结构问题。
+- 预览与编辑器使用不可变排序，避免渲染时原地修改 props，降低隐性状态抖动。
 
 ### 用户中心与后台存储
 
@@ -233,4 +238,4 @@ SITE_PASSWORD=你的访问密码
 
 ## 许可证
 
-MIT
+内部项目，许可证按项目所有者要求执行。
