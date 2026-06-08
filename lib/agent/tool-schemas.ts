@@ -705,6 +705,26 @@ export const BUILD_TOOL_SCHEMAS = pickTools([
   "replace_resume",
 ])
 
+/** 图片导入助手：识别后继续做结构修正与补全 */
+export const IMAGE_IMPORT_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "update_element_text",
+  "update_title",
+  "update_module",
+  "add_module",
+  "remove_module",
+  "reorder_modules",
+  "add_row",
+  "add_rows",
+  "remove_row",
+  "set_row_tags",
+  "set_personal_info",
+  "set_job_intention",
+  "set_layout",
+  "set_theme_color",
+  "replace_resume",
+])
+
 export const SCORE_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_score_report",

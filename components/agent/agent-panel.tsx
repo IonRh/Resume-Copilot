@@ -22,7 +22,7 @@ import {
 import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
-import type { AgentCard, AgentMode, AgentTurn } from "@/lib/agent/types"
+import type { AgentCard, AgentMode, AgentTurn, ChatContentPart } from "@/lib/agent/types"
 import {
   DiffCard,
   DiscoverCard,
@@ -48,7 +48,7 @@ const MODES: { key: AgentMode; label: string; icon: string }[] = [
 const EDITOR_MODES = new Set<AgentMode>(["edit", "proofread", "design", "quantify"])
 
 export interface AgentPanelHandle {
-  send: (text: string, opts?: { displayText?: string }) => void
+  send: (text: string, opts?: { displayText?: string; attachments?: ChatContentPart[] }) => void
 }
 
 const AgentPanel = forwardRef<AgentPanelHandle, {
@@ -255,7 +255,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
 
   useImperativeHandle(ref, () => ({
     send: (text, opts) => {
-      void send(text, { displayText: opts?.displayText })
+      void send(text, { displayText: opts?.displayText, attachments: opts?.attachments })
     },
   }), [send])
 

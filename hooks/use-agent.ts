@@ -11,6 +11,7 @@ import {
   DESIGN_TOOL_SCHEMAS,
   DISCOVER_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
+  IMAGE_IMPORT_TOOL_SCHEMAS,
   INTERVIEW_ANALYSIS_TOOL_SCHEMAS,
   interviewerToolsForPlayMode,
   JD_RESCORE_TOOL_SCHEMAS,
@@ -19,10 +20,9 @@ import {
   QUANTIFY_TOOL_SCHEMAS,
   SCORE_TOOL_SCHEMAS,
 } from "@/lib/agent/tool-schemas"
-import type { AgentMode, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
+import type { AgentMode, ChatContentPart, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
 import { useInterviewRuntime } from "@/lib/interview-runtime-context"
 
-const MAX_ITERATIONS = 8
 const HISTORY_LIMIT = 24
 const STREAM_FLUSH_MS = 80
 const DEFAULT_MAX_STREAM_CHARS = 12000
@@ -32,6 +32,8 @@ function toolsForMode(mode: AgentMode, interviewPlayMode?: "practice" | "simulat
   switch (mode) {
     case "build":
       return BUILD_TOOL_SCHEMAS
+    case "imageImport":
+      return IMAGE_IMPORT_TOOL_SCHEMAS
     case "score":
       return SCORE_TOOL_SCHEMAS
     case "discover":
@@ -141,9 +143,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
       }
 
       try {
-        let iteration = 0
-        while (iteration < MAX_ITERATIONS) {
-          iteration += 1
+        while (!controller.signal.aborted) {
           if (controller.signal.aborted) break
 
           const trimmedHistory = historyRef.current.slice(-HISTORY_LIMIT)
@@ -295,9 +295,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
         }),
       }
       const history: ChatMessage[] = [{ role: "user", content: JD_RESCORE_INSTRUCTION }]
-      let iteration = 0
-      while (iteration < 4) {
-        iteration += 1
+      while (!controller.signal.aborted) {
         if (controller.signal.aborted) break
         const { content, toolCalls } = await streamChat(
           [system, ...history],
@@ -348,7 +346,14 @@ export function useAgent(workspace?: WorkspaceContextValue) {
   }, [ws])
 
   const send = useCallback(
-    async (rawText: string, opts?: { selection?: WorkspaceSelection | null; displayText?: string }) => {
+    async (
+      rawText: string,
+      opts?: {
+        selection?: WorkspaceSelection | null
+        displayText?: string
+        attachments?: ChatContentPart[]
+      },
+    ) => {
       const text = rawText.trim()
       if (!text || running) return false
 
@@ -367,7 +372,12 @@ export function useAgent(workspace?: WorkspaceContextValue) {
 
       let userContent = text
       if (selection) userContent = `（选中：${selection.label}）\n${text}`
-      historyRef.current.push({ role: "user", content: userContent })
+      historyRef.current.push({
+        role: "user",
+        content: opts?.attachments?.length
+          ? [{ type: "text", text: userContent }, ...opts.attachments]
+          : userContent,
+      })
 
       await runLoop(assistantId, selection)
       return true

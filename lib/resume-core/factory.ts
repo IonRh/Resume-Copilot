@@ -278,6 +278,7 @@ export function draftToResumeData(draft: Args, base: ResumeData): ResumeData {
     resumeKind: base.resumeKind,
     variantLabel: base.variantLabel,
     buildMode: base.buildMode,
+    creationMode: base.creationMode,
     centerTitle: bool(draft.centerTitle) ?? true,
     themeColor: str(draft.themeColor) || base.themeColor,
     personalInfoSection: {

@@ -40,8 +40,6 @@ const QUICK_CHIPS: { label: string; send: string }[] = [
   { label: "投递进度", send: "我的投递怎么样了？" },
   { label: "适合方向", send: "我适合投什么方向？" },
 ]
-const MAX_ITERATIONS = 3
-
 export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Msg[]>([])
@@ -88,9 +86,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
     abortRef.current = controller
 
     try {
-      let iteration = 0
-      while (iteration < MAX_ITERATIONS) {
-        iteration += 1
+      while (!controller.signal.aborted) {
         if (controller.signal.aborted) break
 
         setStreamText("")

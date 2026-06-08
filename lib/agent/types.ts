@@ -216,9 +216,13 @@ export interface ToolCall {
   function: { name: string; arguments: string }
 }
 
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } }
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool"
-  content: string | null
+  content: string | ChatContentPart[] | null
   tool_calls?: ToolCall[]
   tool_call_id?: string
   name?: string
@@ -236,6 +240,7 @@ export type AgentMode =
   | "design"
   | "quantify"
   | "discover"
+  | "imageImport"
 
 /** 工具执行结果 */
 export interface ToolResult {

@@ -150,7 +150,9 @@ export interface ResumeData {
   resumeKind?: 'base' | 'jdVariant'
   /** 子简历标签，例如“岗位定制版”或目标岗位名称 */
   variantLabel?: string
-  /** 是否处于「和 AI 聊聊」对话创建阶段；为 true 时主页显示「继续聊聊」而非「编辑」 */
+  /** 创建来源/入口；用于在创建中的简历里恢复对应 Agent 工作台 */
+  creationMode?: 'chat' | 'imageImport'
+  /** 是否处于 AI 创建阶段；为 true 时主页显示继续创建入口而非「编辑」 */
   buildMode?: boolean
   /** 简历标题是否居中显示 */
   centerTitle?: boolean

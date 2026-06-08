@@ -73,6 +73,12 @@ function variantLabelOf(entry: StoredResume): string {
   return parseResumeVariantTitle(titleOf(entry))?.label || getResumeVariantLabel(entry.resumeData)
 }
 
+function buildResumeAction(entry: StoredResume): { icon: string; label: string } {
+  return entry.resumeData.creationMode === "imageImport"
+    ? { icon: "mdi:image-text", label: "继续导入" }
+    : { icon: "mdi:robot-happy-outline", label: "继续聊聊" }
+}
+
 function isVariantResume(entry: StoredResume): boolean {
   return entry.resumeData.resumeKind === "jdVariant" || !!getResumeParentId(entry.resumeData) || !!parseResumeVariantTitle(entry.resumeData.title)
 }
@@ -402,8 +408,25 @@ export default function UserCenter() {
     setCreateOpen(false)
     try {
       const tpl = await loadDefaultTemplate()
-      const data: ResumeData = { ...(tpl ?? createDefaultResumeData()), buildMode: true }
+      const data: ResumeData = { ...(tpl ?? createDefaultResumeData()), buildMode: true, creationMode: "chat" }
       const entry = await createEntryFromData(data)
+      router.push(`/create/${entry.id}`)
+    } catch (e) {
+      toast({
+        title: "创建失败",
+        description: e instanceof Error ? e.message : "未知错误",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // 从图片导入：创建一份图片导入草稿，进入专门的导入 Agent 工作台
+  const handleCreateFromImage = async () => {
+    setCreateOpen(false)
+    try {
+      const tpl = await loadDefaultTemplate()
+      const data: ResumeData = { ...(tpl ?? createDefaultResumeData()), buildMode: true, creationMode: "imageImport" }
+      const entry = await createEntryFromData(data, "图片导入简历")
       router.push(`/create/${entry.id}`)
     } catch (e) {
       toast({
@@ -833,7 +856,7 @@ export default function UserCenter() {
                           <ExportButton resumeData={parent.resumeData} variant="ghost" />
                           {parent.resumeData.buildMode ? (
                             <Button variant="ghost" className="gap-2" onClick={() => router.push(`/create/${parent.id}`)}>
-                              <Icon icon="mdi:robot-happy-outline" className="w-4 h-4" /> 继续聊聊
+                              <Icon icon={buildResumeAction(parent).icon} className="w-4 h-4" /> {buildResumeAction(parent).label}
                             </Button>
                           ) : (
                             <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${parent.id}`)}>
@@ -917,7 +940,7 @@ export default function UserCenter() {
                             <ExportButton resumeData={it.resumeData} variant="ghost" />
                             {it.resumeData.buildMode ? (
                               <Button variant="ghost" className="gap-2" onClick={() => router.push(`/create/${it.id}`)}>
-                                <Icon icon="mdi:robot-happy-outline" className="w-4 h-4" /> 继续聊聊
+                                <Icon icon={buildResumeAction(it).icon} className="w-4 h-4" /> {buildResumeAction(it).label}
                               </Button>
                             ) : (
                               <Button variant="ghost" className="gap-2" onClick={() => router.push(`/edit/${it.id}`)}>
@@ -957,13 +980,13 @@ export default function UserCenter() {
 
       {/* 创建简历：选择创建方式 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>创建简历</DialogTitle>
             <DialogDescription>选择一种方式开始，后台会自动保存你的简历数据。</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <button
               type="button"
               onClick={handleCreateFromScratch}
@@ -986,6 +1009,18 @@ export default function UserCenter() {
               </span>
               <span className="text-sm font-semibold">先和 AI 聊聊</span>
               <span className="text-xs text-muted-foreground">和创建助手对话，由 AI 引导你从零搭建整份简历。</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCreateFromImage()}
+              className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40"
+            >
+              <span className="grid h-11 w-11 place-items-center rounded-lg bg-muted text-primary">
+                <Icon icon="mdi:image-text" className="h-6 w-6" />
+              </span>
+              <span className="text-sm font-semibold">从图片导入</span>
+              <span className="text-xs text-muted-foreground">上传截图或照片，由图片导入助手识别成可编辑简历。</span>
             </button>
           </div>
         </DialogContent>

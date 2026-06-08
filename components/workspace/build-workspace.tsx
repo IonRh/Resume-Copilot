@@ -97,7 +97,7 @@ function BuildInner({ entryId, onBack }: BuildWorkspaceProps) {
   const handleFinish = useCallback(async () => {
     setFinishing(true)
     try {
-      const next: ResumeData = { ...resumeData, buildMode: false }
+      const next: ResumeData = { ...resumeData, buildMode: false, creationMode: undefined }
       await updateEntryData(entryId, next)
       router.push(`/edit/${entryId}`)
     } catch (e) {

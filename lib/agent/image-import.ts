@@ -1,0 +1,1 @@
+export const IMAGE_IMPORT_MAX_BYTES = 8 * 1024 * 1024

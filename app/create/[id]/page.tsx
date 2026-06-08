@@ -7,6 +7,7 @@ import { Icon } from "@iconify/react"
 import type { StoredResume } from "@/types/resume"
 import { getResumeById } from "@/lib/storage"
 import BuildWorkspace from "@/components/workspace/build-workspace"
+import ImageImportWorkspace from "@/components/workspace/image-import-workspace"
 
 export default function CreatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -49,9 +50,11 @@ export default function CreatePage({ params }: { params: Promise<{ id: string }>
     return <main className="min-h-screen bg-background" />
   }
 
+  const Workspace = entry.resumeData.creationMode === "imageImport" ? ImageImportWorkspace : BuildWorkspace
+
   return (
     <main className="min-h-screen bg-background">
-      <BuildWorkspace
+      <Workspace
         entryId={id}
         initialData={entry.resumeData}
         onBack={() => router.push("/resumes")}
