@@ -1,15 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getStoredCampaignReport, listReportReadyCampaigns } from "@/lib/interview-report"
+import { getStoredCampaignReport, reportReadyCampaignsFromSessions } from "@/lib/interview-report"
+import { loadInterviewSessions } from "@/lib/interview-sessions"
+import type { StoredCampaignReport } from "@/types/interview-report"
+import type { InterviewSessionRecord } from "@/types/interview-session"
+
+type CampaignItem = {
+  campaignId: string
+  title: string
+  resumeTitle: string
+  sessions: InterviewSessionRecord[]
+}
 
 export default function InterviewReportHall() {
   const router = useRouter()
-  const [campaigns] = useState(() => listReportReadyCampaigns())
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([])
+  const [reports, setReports] = useState<Record<string, StoredCampaignReport | undefined>>({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadInterviewSessions()
+      .then(async (sessions) => {
+        const nextCampaigns = reportReadyCampaignsFromSessions(sessions)
+        const reportEntries = await Promise.all(
+          nextCampaigns.map(async (campaign) => [campaign.campaignId, await getStoredCampaignReport(campaign.campaignId)] as const),
+        )
+        if (cancelled) return
+        setCampaigns(nextCampaigns)
+        setReports(Object.fromEntries(reportEntries))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-background">
@@ -29,7 +61,11 @@ export default function InterviewReportHall() {
       </div>
 
       <div className="space-y-3 px-4 pb-6">
-        {campaigns.length === 0 ? (
+        {loading ? (
+          <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+            <Icon icon="mdi:loading" className="agent-spin mr-1 inline h-4 w-4" /> 加载中…
+          </div>
+        ) : campaigns.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
             <Icon icon="mdi:clipboard-text-clock-outline" className="mx-auto h-10 w-10 text-primary" />
             <h2 className="mt-4 text-base font-semibold">还没有可复盘的投递</h2>
@@ -39,7 +75,7 @@ export default function InterviewReportHall() {
           </div>
         ) : (
           campaigns.map((campaign) => {
-            const stored = getStoredCampaignReport(campaign.campaignId)
+            const stored = reports[campaign.campaignId]
             return (
               <div
                 key={campaign.campaignId}

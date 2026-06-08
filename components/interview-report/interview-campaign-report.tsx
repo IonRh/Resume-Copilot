@@ -11,11 +11,13 @@ import {
   getCampaignSessions,
   getStoredCampaignReport,
   isPicksComplete,
-  listInterviewAgentSessions,
+  loadInterviewAgentSessions,
   normalizeCampaignReportPick,
   saveCampaignReport,
   sessionsForRound,
+  type InterviewAgentSessionOption,
 } from "@/lib/interview-report"
+import { loadInterviewSessions } from "@/lib/interview-sessions"
 import { generateCampaignReport } from "@/lib/interview-report-agent"
 import type { CampaignReportPicks, StoredCampaignReport } from "@/types/interview-report"
 import InterviewReportView from "@/components/interview-report/interview-report-view"
@@ -45,8 +47,10 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
   const [stored, setStored] = useState<StoredCampaignReport | undefined>()
   const [generating, setGenerating] = useState(false)
   const [showPicker, setShowPicker] = useState(true)
+  const [sessions, setSessions] = useState<import("@/types/interview-session").InterviewSessionRecord[]>([])
+  const [agentSessionMap, setAgentSessionMap] = useState<Record<string, InterviewAgentSessionOption[]>>({})
+  const [loading, setLoading] = useState(true)
 
-  const sessions = useMemo(() => getCampaignSessions(campaignId), [campaignId])
   const reportableRounds = useMemo(
     () => INTERVIEW_ROUNDS.map((round) => ({ round, sessions: sessionsForRound(sessions, round.id) })).filter(
       (item) => item.sessions.length > 0,
@@ -56,9 +60,26 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
   const picksComplete = isPicksComplete(picks)
 
   useEffect(() => {
-    const existing = getStoredCampaignReport(campaignId)
-    setStored(existing)
-    if (existing) setShowPicker(false)
+    let cancelled = false
+    setLoading(true)
+    void Promise.all([loadInterviewSessions(), getStoredCampaignReport(campaignId)])
+      .then(async ([allSessions, existing]) => {
+        const campaignSessions = getCampaignSessions(campaignId, allSessions)
+        const entries = await Promise.all(
+          campaignSessions.map(async (session) => [session.id, await loadInterviewAgentSessions(session)] as const),
+        )
+        if (cancelled) return
+        setSessions(campaignSessions)
+        setAgentSessionMap(Object.fromEntries(entries))
+        setStored(existing)
+        if (existing) setShowPicker(false)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [campaignId])
 
   useEffect(() => {
@@ -67,7 +88,7 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
     for (const round of INTERVIEW_ROUNDS) {
       const list = sessionsForRound(sessions, round.id)
       if (list[0]) {
-        const agentSession = listInterviewAgentSessions(list[0])[0]
+        const agentSession = agentSessionMap[list[0].id]?.[0]
         defaults[round.id] = { sessionId: list[0].id, agentSessionId: agentSession?.id }
       }
     }
@@ -104,6 +125,14 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
     } finally {
       setGenerating(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-muted-foreground">
+        <Icon icon="mdi:loading" className="agent-spin mr-1 inline h-4 w-4" /> 加载中…
+      </div>
+    )
   }
 
   if (sessions.length === 0) {
@@ -160,12 +189,12 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
                     <div className="mb-3 flex items-center gap-2">
                       <Badge variant="secondary">{round.label}</Badge>
                       <span className="text-xs text-muted-foreground">
-                        {list.reduce((total, session) => total + Math.max(listInterviewAgentSessions(session).length, 1), 0)} 个会话可选
+                        {list.reduce((total, session) => total + Math.max(agentSessionMap[session.id]?.length || 0, 1), 0)} 个会话可选
                       </span>
                     </div>
                     <div className="space-y-2">
                       {list.map((session) => {
-                        const agentSessions = listInterviewAgentSessions(session)
+                        const agentSessions = agentSessionMap[session.id] || []
                         const options = agentSessions.length
                           ? agentSessions.map((agentSession) => ({
                               id: pickValue(session.id, agentSession.id),
@@ -177,11 +206,12 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
                             }))
                           : [
                               {
-                              id: pickValue(session.id),
-                              sessionId: session.id,
-                              title: "当前会话",
-                              updatedAt: session.updatedAt,
-                              turnCount: session.questionCount || 0,
+                                id: pickValue(session.id),
+                                sessionId: session.id,
+                                agentSessionId: undefined,
+                                title: "当前会话",
+                                updatedAt: session.updatedAt,
+                                turnCount: session.questionCount || 0,
                               },
                             ]
 

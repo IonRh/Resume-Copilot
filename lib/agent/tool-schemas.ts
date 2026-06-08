@@ -117,6 +117,39 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "set_cover_letter",
+      description:
+        "写入或整体更新左侧自荐信文档。仅用于自荐信工作台：基于简历与用户提供的岗位/JD/公司信息生成可投递文本，不修改简历。",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "自荐信标题，如「前端开发岗位自荐信」" },
+          body: {
+            type: "string",
+            description: "正式版自荐信正文。建议 250-500 字，结构自然，可包含称呼、匹配亮点、求职动机和结尾。",
+          },
+          scenario: {
+            type: "string",
+            enum: ["formal", "short", "referral", "general"],
+            description: "使用场景：正式求职信、简短开场白、内推说明或通用版本",
+          },
+          highlights: {
+            type: "array",
+            items: { type: "string" },
+            description: "本封自荐信实际引用的简历依据，2-5 条，不能编造。",
+          },
+          shortVersion: {
+            type: "string",
+            description: "可选：100-180 字简短版，适合 Boss 直聘/聊天开场。",
+          },
+        },
+        required: ["title", "body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "update_element_text",
       description: "改写指定文本元素的内容（按 element id 定位）。用于润色、纠错、改写单个单元格/段落。会保留原有对齐方式。",
       parameters: {
@@ -650,6 +683,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
 /** 仅这些工具不会产生需要审阅的变更 */
 export const READONLY_TOOLS = new Set([
   "get_resume",
+  "set_cover_letter",
   "research_company_interview",
   "present_score_report",
   "present_jd_match",
@@ -734,6 +768,12 @@ export const SCORE_TOOL_SCHEMAS = pickTools([
 export const DISCOVER_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_career_directions",
+])
+
+/** 自荐信：只读简历并写入信件，不挂载任何简历修改工具 */
+export const COVER_LETTER_TOOL_SCHEMAS = pickTools([
+  "get_resume",
+  "set_cover_letter",
 ])
 
 /** 校对纠错：只改文本，不动结构/样式 */

@@ -10,7 +10,6 @@ import {
   type InterviewRoundId,
 } from "@/lib/agent/interview-rounds"
 
-const STORAGE_KEY = "interview.sessions.v1"
 const INTERVIEWER_STORAGE_PREFIX = "resume.career.interview."
 
 function composeHandoffBriefingBlock(handoff: InterviewRoundHandoff): string {
@@ -32,29 +31,27 @@ function stripHandoffBriefingBlocks(briefing: string): string {
   return briefing.slice(0, index).trim()
 }
 
-function readAll(): InterviewSessionRecord[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as InterviewSessionRecord[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeAll(records: InterviewSessionRecord[]): void {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
-  } catch {
-    /* quota / serialization errors are non-fatal */
-  }
-}
-
 function interviewerStorageKey(resumeId: string, sessionId: string): string {
   return `${INTERVIEWER_STORAGE_PREFIX}${resumeId}.${sessionId}.interviewer`
+}
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw new Error(data.error || "面试记录请求失败")
+  return data
+}
+
+async function readAgentStorage(key: string): Promise<{
+  jd?: string
+  sessions?: Array<{ turns?: Array<{ cards?: Array<{ type?: string }> }> }>
+} | null> {
+  if (typeof window === "undefined") return null
+  const data = await requestJson<{ state?: { jd?: string; sessions?: Array<{ turns?: Array<{ cards?: Array<{ type?: string }> }> }> } | null }>(
+    `/api/interviews/agent-state?key=${encodeURIComponent(key)}`,
+    { cache: "no-store" },
+  )
+  return data.state || null
 }
 
 function normalizeRecord(record: InterviewSessionRecord): InterviewSessionRecord {
@@ -92,16 +89,11 @@ export function extractInterviewTitle(briefing: string): string {
 }
 
 /** 根据已持久化的面试官 Agent 状态补充进度信息 */
-export function enrichSessionFromAgentStorage(record: InterviewSessionRecord): InterviewSessionRecord {
+export async function enrichSessionFromAgentStorage(record: InterviewSessionRecord): Promise<InterviewSessionRecord> {
   if (typeof window === "undefined") return normalizeRecord(record)
   try {
-    const raw = window.localStorage.getItem(interviewerStorageKey(record.resumeId, record.id))
-    if (!raw) return normalizeRecord(record)
-
-    const parsed = JSON.parse(raw) as {
-      jd?: string
-      sessions?: Array<{ turns?: Array<{ cards?: Array<{ type?: string }> }> }>
-    }
+    const parsed = await readAgentStorage(interviewerStorageKey(record.resumeId, record.id))
+    if (!parsed) return normalizeRecord(record)
     const allTurns = (parsed.sessions || []).flatMap((session) => session.turns || [])
 
     let questionCount = 0
@@ -128,84 +120,83 @@ export function enrichSessionFromAgentStorage(record: InterviewSessionRecord): I
 }
 
 export function listInterviewSessions(): InterviewSessionRecord[] {
-  return readAll()
-    .map(enrichSessionFromAgentStorage)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  throw new Error("listInterviewSessions 已迁移为异步接口，请使用 loadInterviewSessions")
 }
 
-export function listInterviewSessionsForRound(roundId: InterviewRoundId): InterviewSessionRecord[] {
-  return listInterviewSessions().filter((item) => item.roundId === roundId)
+export async function loadInterviewSessions(): Promise<InterviewSessionRecord[]> {
+  const data = await requestJson<{ sessions: InterviewSessionRecord[] }>("/api/interviews", { cache: "no-store" })
+  const enriched = await Promise.all((data.sessions || []).map(enrichSessionFromAgentStorage))
+  return enriched.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
 }
 
-export function getInterviewSessionById(id: string): InterviewSessionRecord | undefined {
-  return listInterviewSessions().find((item) => item.id === id)
+export async function listInterviewSessionsForRound(roundId: InterviewRoundId): Promise<InterviewSessionRecord[]> {
+  return (await loadInterviewSessions()).filter((item) => item.roundId === roundId)
 }
 
-export function recordInterviewTermination(sessionId: string): InterviewSessionRecord | null {
-  const records = readAll()
-  const index = records.findIndex((item) => item.id === sessionId)
-  if (index < 0) return null
-  const current = normalizeRecord(records[index])
-  const next: InterviewSessionRecord = {
-    ...current,
-    status: "terminated",
-    failCount: (current.failCount || 0) + 1,
-    updatedAt: new Date().toISOString(),
-  }
-  records[index] = next
-  writeAll(records)
-  return enrichSessionFromAgentStorage(next)
+export async function getInterviewSessionById(id: string): Promise<InterviewSessionRecord | undefined> {
+  const data = await requestJson<{ session: InterviewSessionRecord }>(`/api/interviews/${encodeURIComponent(id)}`, { cache: "no-store" })
+  return enrichSessionFromAgentStorage(data.session)
 }
 
-export function upsertInterviewSession(record: InterviewSessionRecord): void {
+export async function recordInterviewTermination(sessionId: string): Promise<InterviewSessionRecord | null> {
+  const data = await requestJson<{ session?: InterviewSessionRecord }>(`/api/interviews/${encodeURIComponent(sessionId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "terminate" }),
+  })
+  return data.session ? enrichSessionFromAgentStorage(data.session) : null
+}
+
+export async function upsertInterviewSession(record: InterviewSessionRecord): Promise<InterviewSessionRecord> {
   const normalized = normalizeRecord(record)
-  const records = readAll()
-  const index = records.findIndex((item) => item.id === normalized.id)
-  if (index >= 0) {
-    records[index] = { ...records[index], ...normalized, updatedAt: normalized.updatedAt || new Date().toISOString() }
-  } else {
-    records.unshift(normalized)
-  }
-  writeAll(records.slice(0, 100))
+  const data = await requestJson<{ session: InterviewSessionRecord }>("/api/interviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ record: normalized }),
+  })
+  return data.session
 }
 
-export function touchInterviewSession(id: string): void {
-  const records = readAll()
-  const index = records.findIndex((item) => item.id === id)
-  if (index < 0) return
-  records[index] = { ...records[index], updatedAt: new Date().toISOString() }
-  writeAll(records)
+export async function touchInterviewSession(id: string): Promise<void> {
+  await requestJson<{ session?: InterviewSessionRecord }>(`/api/interviews/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "touch" }),
+  })
 }
 
-export function deleteInterviewSession(id: string): void {
-  writeAll(readAll().filter((item) => item.id !== id))
+export async function deleteInterviewSession(id: string): Promise<void> {
+  await requestJson<{ deleted: boolean }>(`/api/interviews/${encodeURIComponent(id)}`, { method: "DELETE" })
 }
 
-export function deleteInterviewSessionStorage(resumeId: string, sessionId: string): void {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.removeItem(interviewerStorageKey(resumeId, sessionId))
-    window.localStorage.removeItem(`resume.career.interview.${resumeId}.${sessionId}.analysis`)
-  } catch {
-    /* ignore */
-  }
+export async function deleteInterviewSessionStorage(resumeId: string, sessionId: string): Promise<void> {
+  const keys = [
+    interviewerStorageKey(resumeId, sessionId),
+    `resume.career.interview.${resumeId}.${sessionId}.analysis`,
+  ]
+  await deleteInterviewAgentStateKeys(keys)
 }
 
-export function createNextRoundSession(
+export async function deleteInterviewAgentStateKeys(keys: string[]): Promise<void> {
+  await requestJson<{ deleted: number }>("/api/interviews/agent-state", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keys }),
+  })
+}
+
+export async function createNextRoundSession(
   parent: InterviewSessionRecord,
   handoff?: InterviewRoundHandoff,
-): InterviewSessionRecord | null {
+): Promise<InterviewSessionRecord | null> {
   const nextRound = getNextRound(parent.roundId)
   if (!nextRound) return null
 
   let jobBriefing = stripHandoffBriefingBlocks(parent.jobBriefing?.trim() || "")
   if (!jobBriefing && typeof window !== "undefined") {
     try {
-      const raw = window.localStorage.getItem(interviewerStorageKey(parent.resumeId, parent.id))
-      if (raw) {
-        const parsed = JSON.parse(raw) as { jd?: string }
-        if (parsed.jd) jobBriefing = extractJobBriefing(parsed.jd)
-      }
+      const parsed = await readAgentStorage(interviewerStorageKey(parent.resumeId, parent.id))
+      if (parsed?.jd) jobBriefing = extractJobBriefing(parsed.jd)
     } catch {
       /* ignore */
     }
@@ -241,31 +232,5 @@ export function createNextRoundSession(
     updatedAt: now,
   }
 
-  upsertInterviewSession(record)
-  return record
-}
-
-export function stashInterviewBriefing(args: {
-  resumeId: string
-  sessionId: string
-  roundId: InterviewRoundId
-  briefing: string
-  playMode?: InterviewSessionRecord["playMode"]
-}): void {
-  if (typeof window === "undefined") return
-  try {
-    sessionStorage.setItem(
-      "career-briefing",
-      JSON.stringify({
-        mode: "interview",
-        resumeId: args.resumeId,
-        briefing: args.briefing,
-        sessionId: args.sessionId,
-        roundId: args.roundId,
-        playMode: args.playMode || "practice",
-      }),
-    )
-  } catch {
-    /* ignore */
-  }
+  return upsertInterviewSession(record)
 }

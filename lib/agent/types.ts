@@ -175,6 +175,14 @@ export interface DiscoverCard {
 
 export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard | DiscoverCard
 
+export interface CoverLetterDraft {
+  title: string
+  body: string
+  scenario?: "formal" | "short" | "referral" | "general"
+  highlights?: string[]
+  shortVersion?: string
+}
+
 /* ---------- 对话回合（UI 层） ---------- */
 
 export type TurnRole = "user" | "assistant"
@@ -240,6 +248,7 @@ export type AgentMode =
   | "design"
   | "quantify"
   | "discover"
+  | "coverLetter"
   | "imageImport"
 
 /** 工具执行结果 */
@@ -251,6 +260,8 @@ export interface ToolResult {
   change?: ChangeSet
   /** 展示类工具产出的卡片 */
   card?: AgentCard
+  /** 自荐信专属工具产出的信件草稿 */
+  coverLetter?: CoverLetterDraft
   /** 真实模拟：挂面试终止 */
   terminateInterview?: boolean
 }

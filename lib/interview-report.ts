@@ -9,10 +9,6 @@ import type {
   FullInterviewReport,
   StoredCampaignReport,
 } from "@/types/interview-report"
-import { listInterviewSessions } from "@/lib/interview-sessions"
-
-const REPORT_STORAGE_KEY = "interview.reports.v1"
-
 export interface SessionExchange {
   question: string
   answer: string
@@ -35,14 +31,14 @@ type PersistedAgentState = {
 }
 
 function readAgentStorage(key: string): PersistedAgentState | null {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return null
-    return JSON.parse(raw) as PersistedAgentState
-  } catch {
-    return null
-  }
+  throw new Error(`readAgentStorage 已迁移为异步接口，请使用 loadAgentStorage：${key}`)
+}
+
+async function loadAgentStorage(key: string): Promise<PersistedAgentState | null> {
+  const res = await fetch(`/api/interviews/agent-state?key=${encodeURIComponent(key)}`, { cache: "no-store" })
+  const data = (await res.json().catch(() => ({}))) as { state?: PersistedAgentState | null; error?: string }
+  if (!res.ok) throw new Error(data.error || "读取面试对话失败")
+  return data.state || null
 }
 
 function collectTurns(state: PersistedAgentState | null, agentSessionId?: string): AgentTurn[] {
@@ -91,8 +87,12 @@ export interface InterviewAgentSessionOption {
 }
 
 export function listInterviewAgentSessions(record: InterviewSessionRecord): InterviewAgentSessionOption[] {
+  throw new Error(`listInterviewAgentSessions 已迁移为异步接口，请使用 loadInterviewAgentSessions：${record.id}`)
+}
+
+export async function loadInterviewAgentSessions(record: InterviewSessionRecord): Promise<InterviewAgentSessionOption[]> {
   const interviewerKey = `resume.career.interview.${record.resumeId}.${record.id}.interviewer`
-  const state = readAgentStorage(interviewerKey)
+  const state = await loadAgentStorage(interviewerKey)
   return (state?.sessions || [])
     .map((session, index) => ({
       id: session.id || `agent-session-${index}`,
@@ -104,6 +104,10 @@ export function listInterviewAgentSessions(record: InterviewSessionRecord): Inte
 }
 
 export function extractSessionTranscript(record: InterviewSessionRecord, agentSessionId?: string): SessionTranscript {
+  throw new Error(`extractSessionTranscript 已迁移为异步接口，请使用 loadSessionTranscript：${record.id}:${agentSessionId || ""}`)
+}
+
+export async function loadSessionTranscript(record: InterviewSessionRecord, agentSessionId?: string): Promise<SessionTranscript> {
   const interviewerKey = `resume.career.interview.${record.resumeId}.${record.id}.interviewer`
   const analysisKey = `resume.career.interview.${record.resumeId}.${record.id}.analysis`
 
@@ -111,7 +115,7 @@ export function extractSessionTranscript(record: InterviewSessionRecord, agentSe
   const answers: string[] = []
   const analyses: string[] = []
 
-  for (const turn of collectTurns(readAgentStorage(interviewerKey), agentSessionId)) {
+  for (const turn of collectTurns(await loadAgentStorage(interviewerKey), agentSessionId)) {
     if (turn.role === "assistant") {
       questions.push(...extractQuestionsFromTurn(turn))
     } else if (turn.role === "user" && turn.content?.trim()) {
@@ -119,7 +123,7 @@ export function extractSessionTranscript(record: InterviewSessionRecord, agentSe
     }
   }
 
-  for (const turn of collectTurns(readAgentStorage(analysisKey), agentSessionId)) {
+  for (const turn of collectTurns(await loadAgentStorage(analysisKey), agentSessionId)) {
     if (turn.role === "assistant" && turn.content?.trim()) {
       analyses.push(turn.content.trim())
     }
@@ -180,71 +184,68 @@ export function listReportReadyCampaigns(): Array<{
   resumeTitle: string
   sessions: InterviewSessionRecord[]
 }> {
+  throw new Error("listReportReadyCampaigns 已迁移为异步接口，请在页面中基于 loadInterviewSessions 计算")
+}
+
+export function reportReadyCampaignsFromSessions(sessions: InterviewSessionRecord[]): Array<{
+  campaignId: string
+  title: string
+  resumeTitle: string
+  sessions: InterviewSessionRecord[]
+}> {
   const result: Array<{ campaignId: string; title: string; resumeTitle: string; sessions: InterviewSessionRecord[] }> = []
-  for (const [campaignId, sessions] of groupSessionsByCampaign(listInterviewSessions())) {
-    if (!hasReportableInterview(sessions)) continue
-    const latest = [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+  for (const [campaignId, campaignSessions] of groupSessionsByCampaign(sessions)) {
+    if (!hasReportableInterview(campaignSessions)) continue
+    const latest = [...campaignSessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
     result.push({
       campaignId,
       title: latest.title,
       resumeTitle: latest.resumeTitle,
-      sessions,
+      sessions: campaignSessions,
     })
   }
   return result.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"))
 }
 
-export function getCampaignSessions(campaignId: string): InterviewSessionRecord[] {
-  return groupSessionsByCampaign(listInterviewSessions()).get(campaignId) || []
+export function getCampaignSessions(campaignId: string, sessions: InterviewSessionRecord[]): InterviewSessionRecord[] {
+  return groupSessionsByCampaign(sessions).get(campaignId) || []
 }
 
-function readReports(): StoredCampaignReport[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(REPORT_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as StoredCampaignReport[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
+export async function getStoredCampaignReport(campaignId: string): Promise<StoredCampaignReport | undefined> {
+  const res = await fetch(`/api/interviews/reports/${encodeURIComponent(campaignId)}`, { cache: "no-store" })
+  const data = (await res.json().catch(() => ({}))) as { report?: StoredCampaignReport | null; error?: string }
+  if (!res.ok) throw new Error(data.error || "读取面试报告失败")
+  return data.report || undefined
 }
 
-function writeReports(reports: StoredCampaignReport[]): void {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(reports.slice(0, 20)))
-  } catch {
-    /* ignore */
-  }
+export async function saveCampaignReport(entry: StoredCampaignReport): Promise<StoredCampaignReport> {
+  const res = await fetch(`/api/interviews/reports/${encodeURIComponent(entry.campaignId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ report: entry }),
+  })
+  const data = (await res.json().catch(() => ({}))) as { report?: StoredCampaignReport; error?: string }
+  if (!res.ok || !data.report) throw new Error(data.error || "保存面试报告失败")
+  return data.report
 }
 
-export function getStoredCampaignReport(campaignId: string): StoredCampaignReport | undefined {
-  return readReports().find((item) => item.campaignId === campaignId)
-}
-
-export function saveCampaignReport(entry: StoredCampaignReport): void {
-  const reports = readReports().filter((item) => item.campaignId !== entry.campaignId)
-  reports.unshift(entry)
-  writeReports(reports)
-}
-
-export function buildReportInput(
+export async function buildReportInput(
   picks: CampaignReportPicks,
   campaignSessions: InterviewSessionRecord[],
-): {
+): Promise<{
   title: string
   resumeTitle: string
   jobBriefing: string
   rounds: SessionTranscript[]
-} {
-  const transcripts = INTERVIEW_ROUNDS.map((round) => {
+}> {
+  const transcriptPromises = INTERVIEW_ROUNDS.map((round) => {
     const pick = normalizeCampaignReportPick(picks[round.id])
     if (!pick) return null
     const session = campaignSessions.find((item) => item.id === pick.sessionId)
     if (!session) throw new Error(`${round.label} 的会话选择已失效`)
-    return extractSessionTranscript(session, pick.agentSessionId)
-  }).filter((item): item is SessionTranscript => Boolean(item))
+    return loadSessionTranscript(session, pick.agentSessionId)
+  })
+  const transcripts = (await Promise.all(transcriptPromises)).filter((item): item is SessionTranscript => Boolean(item))
 
   if (!transcripts.length) throw new Error("请至少选择一场面试记录")
 

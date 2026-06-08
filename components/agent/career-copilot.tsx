@@ -3,8 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { streamChat } from "@/lib/agent/stream"
 import { getAllApplications } from "@/lib/applications"
+import { getResumeDisplayName } from "@/lib/resume-display"
 import {
   COPILOT_ACTION_META,
   COPILOT_KICKOFF,
@@ -40,6 +50,86 @@ const QUICK_CHIPS: { label: string; send: string }[] = [
   { label: "投递进度", send: "我的投递怎么样了？" },
   { label: "适合方向", send: "我适合投什么方向？" },
 ]
+
+function actionPreview(action: CopilotAction, resumes: StoredResume[]) {
+  const resume = action.resumeId ? resumes.find((item) => item.id === action.resumeId) : undefined
+  const resumeTitle = resume ? getResumeDisplayName(resume) : undefined
+
+  switch (action.kind) {
+    case "create_resume":
+      return {
+        title: "创建新简历",
+        destination: "简历创建",
+        summary: "将跳转到创建页面，可选择空白模板、AI 辅助创建或图片导入。",
+        details: ["不会修改已有简历", "选择创建方式后即可开始"],
+        confirmLabel: "前往创建",
+      }
+    case "applications":
+      return {
+        title: "查看投递进度",
+        destination: "投递看板",
+        summary: "将打开投递看板，查看各投递的当前状态与待跟进事项。",
+        details: ["仅查看，不会修改投递记录", "可快速梳理近期进度"],
+        confirmLabel: "前往投递看板",
+      }
+    case "polish":
+      return {
+        title: "AI 润色简历",
+        destination: "简历编辑",
+        summary: "将打开所选简历，由 AI 分析表达并提出逐段修改建议。",
+        details: [
+          resumeTitle ? `目标简历：${resumeTitle}` : "使用助手推荐的简历",
+          "仅提供建议，确认后才会应用修改",
+        ],
+        confirmLabel: "开始润色",
+      }
+    case "jd_match":
+      return {
+        title: "JD 匹配分析",
+        destination: "JD 匹配",
+        summary: "将引导你粘贴目标岗位 JD，并分析简历与岗位的匹配度及待优化项。",
+        details: [
+          resumeTitle ? `目标简历：${resumeTitle}` : "使用助手推荐的简历",
+          "识别关键词匹配、能力缺口及建议改写部分",
+        ],
+        confirmLabel: "开始匹配",
+      }
+    case "discover":
+      return {
+        title: "岗位方向推荐",
+        destination: "方向分析",
+        summary: "将基于简历分析适合投递的岗位方向及待补充的能力项。",
+        details: [
+          resumeTitle ? `参考简历：${resumeTitle}` : "使用助手推荐的简历",
+          "仅做分析，不会修改简历",
+        ],
+        confirmLabel: "开始分析",
+      }
+    case "interview":
+      return {
+        title: "模拟面试",
+        destination: "模拟面试",
+        summary: "将打开模拟面试页面，选择岗位和轮次后即可开始练习。",
+        details: [
+          resumeTitle ? `默认简历：${resumeTitle}` : "进入后可选择简历",
+          "开始前需填写公司、岗位或 JD 信息",
+        ],
+        confirmLabel: "前往模拟面试",
+      }
+    case "edit_resume":
+      return {
+        title: "打开简历",
+        destination: "简历编辑",
+        summary: "将打开所选简历进行编辑；若为未完成草稿，将继续创建流程。",
+        details: [
+          resumeTitle ? `目标简历：${resumeTitle}` : "使用助手推荐的简历",
+          "支持编辑、预览和导出",
+        ],
+        confirmLabel: "打开简历",
+      }
+  }
+}
+
 export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Msg[]>([])
@@ -48,6 +138,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [signals, setSignals] = useState<JobSearchSignals | null>(null)
+  const [pendingAction, setPendingAction] = useState<CopilotAction | null>(null)
 
   const applicationsRef = useRef<JobApplication[]>([])
   const systemRef = useRef<string>("")
@@ -232,12 +323,20 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
     }
   }
 
-  const runAction = (action: CopilotAction) => {
+  const requestAction = (action: CopilotAction) => {
+    setPendingAction(action)
+  }
+
+  const runAction = () => {
+    if (!pendingAction) return
+    const action = pendingAction
+    setPendingAction(null)
     setOpen(false)
     onAction(action)
   }
 
   const badge = signals ? attentionCount(signals) : 0
+  const pendingPreview = pendingAction ? actionPreview(pendingAction, resumes) : null
 
   return (
     <>
@@ -297,7 +396,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
                         <button
                           key={j}
                           type="button"
-                          onClick={() => runAction(action)}
+                          onClick={() => requestAction(action)}
                           className="brand-gradient-bg inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90"
                         >
                           <Icon icon={COPILOT_ACTION_META[action.kind].icon} className="h-3.5 w-3.5" />
@@ -371,6 +470,63 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
           </div>
         </div>
       ) : null}
+
+      <Dialog open={Boolean(pendingAction)} onOpenChange={(next) => {
+        if (!next) setPendingAction(null)
+      }}>
+        <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md">
+          {pendingPreview ? (
+            <>
+              <DialogHeader>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="brand-gradient-bg grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                    <Icon
+                      icon={pendingAction ? COPILOT_ACTION_META[pendingAction.kind].icon : "mdi:robot-happy-outline"}
+                      className="h-5 w-5"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <DialogTitle className="leading-tight">{pendingPreview.title}</DialogTitle>
+                    <DialogDescription className="mt-1">
+                      确认后将跳转到对应功能页面。
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Badge variant="secondary" className="rounded-full">
+                      目标功能
+                    </Badge>
+                    <span className="text-sm font-medium">{pendingPreview.destination}</span>
+                  </div>
+                  <p className="text-sm leading-6 text-muted-foreground">{pendingPreview.summary}</p>
+                </div>
+
+                <div className="space-y-2">
+                  {pendingPreview.details.map((detail) => (
+                    <div key={detail} className="flex items-start gap-2 text-sm">
+                      <Icon icon="mdi:check-circle-outline" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span className="leading-5">{detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPendingAction(null)}>
+                  取消
+                </Button>
+                <Button className="brand-gradient-bg border-0" onClick={runAction}>
+                  {pendingPreview.confirmLabel}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

@@ -35,20 +35,19 @@ import { useToast } from "@/hooks/use-toast"
 import type { StoredResume } from "@/types/resume"
 import type { InterviewRoundHandoff, InterviewSessionRecord } from "@/types/interview-session"
 import { getAllResumes, getCachedResumes } from "@/lib/storage"
-import { composeInterviewBriefing, getInterviewRound, getNextRound } from "@/lib/agent/interview-rounds"
+import { getNextRound } from "@/lib/agent/interview-rounds"
 import {
   createNextRoundSession,
   deleteInterviewSession,
   deleteInterviewSessionStorage,
-  listInterviewSessions,
-  stashInterviewBriefing,
+  loadInterviewSessions,
 } from "@/lib/interview-sessions"
 import {
   deleteStoredRoundHandoff,
   generateRoundHandoff,
   getStoredRoundHandoff,
 } from "@/lib/interview-handoff"
-import { listInterviewAgentSessions } from "@/lib/interview-report"
+import { loadInterviewAgentSessions, type InterviewAgentSessionOption } from "@/lib/interview-report"
 import { Markdown } from "@/components/agent/markdown"
 import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
 
@@ -101,9 +100,10 @@ export default function InterviewHub() {
   const [handoffVisible, setHandoffVisible] = useState(false)
   const [handoffBusy, setHandoffBusy] = useState(false)
   const [handoffError, setHandoffError] = useState<string | null>(null)
+  const [handoffSourceOptions, setHandoffSourceOptions] = useState<InterviewAgentSessionOption[]>([])
 
-  const refreshSessions = useCallback(() => {
-    setSessions(listInterviewSessions())
+  const refreshSessions = useCallback(async () => {
+    setSessions(await loadInterviewSessions())
   }, [])
 
   const refresh = useCallback(() => {
@@ -122,11 +122,13 @@ export default function InterviewHub() {
           })
         }
       })
-      .finally(() => {
+      .then(async () => {
         if (!cancelled) {
-          refreshSessions()
-          setLoading(false)
+          await refreshSessions()
         }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -160,22 +162,6 @@ export default function InterviewHub() {
     )
   }, [keyword, sessions])
 
-  const handoffSourceOptions = useMemo(() => {
-    if (!handoffParent) return []
-    const agentSessions = listInterviewAgentSessions(handoffParent)
-    if (agentSessions.length) {
-      return agentSessions.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
-    }
-    return [
-      {
-        id: handoffParent.id,
-        title: "当前会话",
-        updatedAt: handoffParent.updatedAt,
-        turnCount: handoffParent.questionCount || 0,
-      },
-    ]
-  }, [handoffParent])
-
   const openIntake = useCallback(
     (resumeId?: string) => {
       if (!mostRecent) {
@@ -189,14 +175,7 @@ export default function InterviewHub() {
   )
 
   const goToSession = useCallback(
-    (session: InterviewSessionRecord, briefing: string) => {
-      stashInterviewBriefing({
-        resumeId: session.resumeId,
-        sessionId: session.id,
-        roundId: session.roundId,
-        briefing,
-        playMode: session.playMode,
-      })
+    (session: InterviewSessionRecord) => {
       router.push(`/career/interview/${session.resumeId}?session=${encodeURIComponent(session.id)}`)
     },
     [router],
@@ -204,25 +183,34 @@ export default function InterviewHub() {
 
   const continueSession = useCallback(
     (session: InterviewSessionRecord) => {
-      const round = getInterviewRound(session.roundId)!
-      const briefing = composeInterviewBriefing(round, session.jobBriefing || session.briefingPreview || "")
-      goToSession(session, briefing)
+      goToSession(session)
     },
     [goToSession],
   )
 
   const openHandoffDialog = useCallback(
-    (session: InterviewSessionRecord) => {
+    async (session: InterviewSessionRecord) => {
       const nextRound = getNextRound(session.roundId)
       if (!nextRound) {
         toast({ title: "已是最后一轮", description: "Leader 面是本次模拟面试的最后一轮。" })
         return
       }
-      const agentSessions = listInterviewAgentSessions(session)
+      const agentSessions = await loadInterviewAgentSessions(session)
       const sourceId = agentSessions[0]?.id || session.id
+      const options = agentSessions.length
+        ? agentSessions.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+        : [
+            {
+              id: session.id,
+              title: "当前会话",
+              updatedAt: session.updatedAt,
+              turnCount: session.questionCount || 0,
+            },
+          ]
+      setHandoffSourceOptions(options)
       setHandoffParent(session)
       setHandoffSourceId(sourceId)
-      setHandoff(getStoredRoundHandoff(handoffCacheKey(session.id, sourceId)) || getStoredRoundHandoff(session.id) || null)
+      setHandoff((await getStoredRoundHandoff(handoffCacheKey(session.id, sourceId))) || (await getStoredRoundHandoff(session.id)) || null)
       setHandoffVisible(false)
       setHandoffError(null)
     },
@@ -237,7 +225,7 @@ export default function InterviewHub() {
   const generateSelectedHandoff = useCallback(async (source = selectedHandoffSource, force = false) => {
     if (!source || !handoffParent) return null
     const handoffKey = handoffCacheKey(handoffParent.id, source.id)
-    const cached = force ? undefined : getStoredRoundHandoff(handoffKey)
+    const cached = force ? undefined : await getStoredRoundHandoff(handoffKey)
     if (cached) {
       setHandoff(cached)
       return cached
@@ -263,7 +251,7 @@ export default function InterviewHub() {
 
   useEffect(() => {
     if (!handoffParent || !handoffSourceId) return
-    setHandoff(getStoredRoundHandoff(handoffCacheKey(handoffParent.id, handoffSourceId)) || null)
+    void getStoredRoundHandoff(handoffCacheKey(handoffParent.id, handoffSourceId)).then((cached) => setHandoff(cached || null))
     setHandoffVisible(false)
     setHandoffError(null)
   }, [handoffParent, handoffSourceId])
@@ -281,7 +269,7 @@ export default function InterviewHub() {
     const handoffToUse = handoff || (await generateSelectedHandoff())
     if (!handoffToUse) return
 
-    const nextSession = createNextRoundSession(handoffParent, handoffToUse)
+    const nextSession = await createNextRoundSession(handoffParent, handoffToUse)
       if (!nextSession) {
         toast({
           title: "无法进入下一轮",
@@ -290,22 +278,21 @@ export default function InterviewHub() {
         })
         return
       }
-      const briefing = composeInterviewBriefing(nextRound, nextSession.jobBriefing || "")
-      goToSession(nextSession, briefing)
+      goToSession(nextSession)
       setHandoffParent(null)
       setHandoff(null)
-      refreshSessions()
+      void refreshSessions()
       toast({ title: "已带入交接评价", description: `${nextRound.label} 已就绪。` })
     },
     [generateSelectedHandoff, goToSession, handoff, handoffParent, refreshSessions, toast],
   )
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return
-    deleteInterviewSession(deleteTarget.id)
-    deleteInterviewSessionStorage(deleteTarget.resumeId, deleteTarget.id)
+    await deleteInterviewSessionStorage(deleteTarget.resumeId, deleteTarget.id)
+    await deleteInterviewSession(deleteTarget.id)
     setDeleteTarget(null)
-    refreshSessions()
+    void refreshSessions()
     toast({ title: "已删除", description: "该场模拟面试记录已移除。" })
   }, [deleteTarget, refreshSessions, toast])
 
@@ -459,7 +446,7 @@ export default function InterviewHub() {
                       <Button
                         size="sm"
                         className="brand-gradient-bg gap-1 border-0"
-                        onClick={() => openHandoffDialog(session)}
+                        onClick={() => void openHandoffDialog(session)}
                       >
                         <Icon icon="mdi:arrow-right-circle-outline" className="h-4 w-4" />
                         进入{nextRound.round}
@@ -555,7 +542,7 @@ export default function InterviewHub() {
                     disabled={handoffBusy || !selectedHandoffSource}
                     onClick={() => {
                       if (!selectedHandoffSource || !handoffParent) return
-                      deleteStoredRoundHandoff(handoffCacheKey(handoffParent.id, selectedHandoffSource.id))
+                      void deleteStoredRoundHandoff(handoffCacheKey(handoffParent.id, selectedHandoffSource.id))
                       setHandoff(null)
                       void generateSelectedHandoff(selectedHandoffSource, true)
                     }}

@@ -21,7 +21,8 @@ import { buildJdVariantTitle, createJdVariantResumeData, parseResumeVariantTitle
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
-import { touchInterviewSession, getInterviewSessionById, recordInterviewTermination } from "@/lib/interview-sessions"
+import { composeInterviewBriefing, getInterviewRound } from "@/lib/agent/interview-rounds"
+import { deleteInterviewAgentStateKeys, touchInterviewSession, getInterviewSessionById, recordInterviewTermination } from "@/lib/interview-sessions"
 import { InterviewRuntimeProvider } from "@/lib/interview-runtime-context"
 import type { InterviewPlayMode } from "@/types/interview-session"
 import { ResumeWorkspaceProvider, useResumeWorkspace } from "@/lib/agent/store"
@@ -29,9 +30,9 @@ import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
 import ResumePreview from "@/components/resume-preview"
 import ExportButton from "@/components/export-button"
 import AgentPanel, { type AgentPanelHandle } from "@/components/agent/agent-panel"
-import type { AgentCard, WorkspaceSelection } from "@/lib/agent/types"
+import type { AgentCard, CoverLetterDraft, WorkspaceSelection } from "@/lib/agent/types"
 
-type CareerMode = "jd" | "interview" | "discover"
+type CareerMode = "jd" | "interview" | "discover" | "coverLetter"
 
 interface CareerWorkspaceProps {
   mode: CareerMode
@@ -46,6 +47,13 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
   if (props.mode === "interview") {
     return <InterviewWorkspace {...props} />
   }
+  if (props.mode === "coverLetter") {
+    return (
+      <ResumeWorkspaceProvider initialData={props.initialData} storageKey={storageKey}>
+        <CoverLetterWorkspace {...props} />
+      </ResumeWorkspaceProvider>
+    )
+  }
   return (
     <ResumeWorkspaceProvider initialData={props.initialData} storageKey={storageKey}>
       <CareerInner {...props} />
@@ -53,54 +61,180 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
   )
 }
 
-function InterviewWorkspace(props: CareerWorkspaceProps) {
-  const initialBriefing = useRef<{ briefing: string; sessionId: string; playMode: InterviewPlayMode } | null>(null)
-  if (initialBriefing.current === null && typeof window !== "undefined") {
-    let next = { briefing: "", sessionId: "", playMode: "practice" as InterviewPlayMode }
+const emptyCoverLetter: CoverLetterDraft = {
+  title: "",
+  body: "",
+  scenario: "general",
+  highlights: [],
+  shortVersion: "",
+}
+
+function CoverLetterWorkspace({ entryId, initialData, onBack }: CareerWorkspaceProps) {
+  const ws = useResumeWorkspace()
+  const { setAgentOpen, setMode } = ws
+  const profile = AGENT_PROFILES.coverLetter
+  const storageKey = `resume.coverLetter.${entryId}`
+  const hydratedRef = useRef(false)
+  const [draft, setDraft] = useState<CoverLetterDraft>(emptyCoverLetter)
+  const [copied, setCopied] = useState<"body" | "short" | null>(null)
+
+  useEffect(() => {
+    setMode("coverLetter")
+    setAgentOpen(true)
+  }, [setAgentOpen, setMode])
+
+  useEffect(() => {
+    if (hydratedRef.current || typeof window === "undefined") return
+    hydratedRef.current = true
     try {
-      const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
+      const raw = window.localStorage.getItem(storageKey)
       if (raw) {
-        const parsed = JSON.parse(raw) as {
-          mode?: string
-          resumeId?: string
-          briefing?: string
-          sessionId?: string
-          playMode?: InterviewPlayMode
-        }
-        if (parsed.mode === props.mode && parsed.resumeId === props.entryId) {
-          window.sessionStorage.removeItem(CAREER_BRIEFING_KEY)
-          next = {
-            briefing: parsed.briefing || "",
-            sessionId: parsed.sessionId || "",
-            playMode: parsed.playMode === "simulation" ? "simulation" : "practice",
-          }
-        }
+        const parsed = JSON.parse(raw) as CoverLetterDraft
+        setDraft({ ...emptyCoverLetter, ...parsed })
       }
     } catch {
       /* ignore */
     }
-    initialBriefing.current = next
-  }
-  const [briefing] = useState<string>(() => initialBriefing.current?.briefing || "")
-  const [sessionId] = useState<string>(() => props.sessionId || initialBriefing.current?.sessionId || `page-${Date.now()}`)
-  const [playMode] = useState<InterviewPlayMode>(() => {
-    const fromStorage = initialBriefing.current?.playMode
-    if (fromStorage === "simulation") return "simulation"
-    const sid = props.sessionId || initialBriefing.current?.sessionId || ""
-    if (sid) {
-      const record = getInterviewSessionById(sid)
-      if (record?.playMode === "simulation") return "simulation"
+  }, [storageKey])
+
+  useEffect(() => {
+    if (!hydratedRef.current || typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(draft))
+    } catch {
+      /* ignore */
     }
-    return "practice"
-  })
+  }, [draft, storageKey])
+
+  const copyText = useCallback(async (kind: "body" | "short", text: string) => {
+    if (!text.trim()) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(kind)
+      window.setTimeout(() => setCopied(null), 1400)
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  }, [])
+
+  const hasBody = draft.body.trim().length > 0
+
+  return (
+    <div className="rw-shell">
+      <div className="rw-toolbar">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="brand-gradient-bg grid h-7 w-7 place-items-center rounded-lg">
+            <Icon icon={profile.icon} className="h-4 w-4" />
+          </span>
+          <h1 className="hidden text-base font-semibold sm:block">{profile.name}</h1>
+          <Badge variant="secondary" className="max-w-[220px] truncate text-xs">
+            {initialData.title || "未命名"}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          {onBack ? (
+            <Button variant="outline" size="sm" onClick={() => onBack?.()} className="gap-2 bg-transparent">
+              <Icon icon="mdi:arrow-left" className="h-4 w-4" />
+              <span className="hidden sm:inline">返回</span>
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2 bg-transparent"
+            disabled={!hasBody}
+            onClick={() => void copyText("body", draft.body)}
+            title="复制正式版"
+          >
+            <Icon icon={copied === "body" ? "mdi:check" : "mdi:content-copy"} className="h-4 w-4" />
+            <span className="hidden sm:inline">{copied === "body" ? "已复制" : "复制"}</span>
+          </Button>
+        </div>
+      </div>
+
+      <div className="cover-letter-body">
+        <section className="cover-letter-pane">
+          <div className="cover-letter-paper">
+            <input
+              value={draft.title}
+              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+              placeholder="自荐信标题"
+              className="cover-letter-title"
+            />
+            <textarea
+              value={draft.body}
+              onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
+              placeholder="右侧 Agent 会先询问目标岗位或 JD，然后把自荐信写到这里。"
+              className="cover-letter-editor"
+            />
+          </div>
+
+          {draft.shortVersion?.trim() || draft.highlights?.length ? (
+            <div className="cover-letter-side">
+              {draft.shortVersion?.trim() ? (
+                <div className="cover-letter-note">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold">简短版</div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1 px-2 text-xs"
+                      onClick={() => void copyText("short", draft.shortVersion || "")}
+                    >
+                      <Icon icon={copied === "short" ? "mdi:check" : "mdi:content-copy"} className="h-3.5 w-3.5" />
+                      {copied === "short" ? "已复制" : "复制"}
+                    </Button>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{draft.shortVersion}</p>
+                </div>
+              ) : null}
+
+              {draft.highlights?.length ? (
+                <div className="cover-letter-note">
+                  <div className="text-xs font-semibold">引用依据</div>
+                  <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {draft.highlights.map((item, index) => (
+                      <li key={`${item}-${index}`} className="flex gap-1.5">
+                        <Icon icon="mdi:check-circle-outline" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+
+        <AgentPanel lockedMode="coverLetter" onCoverLetter={(next) => setDraft({ ...emptyCoverLetter, ...next })} />
+      </div>
+    </div>
+  )
+}
+
+function InterviewWorkspace(props: CareerWorkspaceProps) {
+  const [sessionId] = useState<string>(() => props.sessionId || `page-${Date.now()}`)
+  const [briefing, setBriefing] = useState("")
+  const [playMode, setPlayMode] = useState<InterviewPlayMode>("practice")
   const [failModalOpen, setFailModalOpen] = useState(false)
   const storageScope = `${props.entryId}.${sessionId}`
   const analysisStorageKey = `resume.career.${props.mode}.${storageScope}.analysis`
   const interviewerStorageKey = `resume.career.${props.mode}.${storageScope}.interviewer`
 
   const handleInterviewTerminated = useCallback(() => {
-    recordInterviewTermination(sessionId)
+    void recordInterviewTermination(sessionId)
     setFailModalOpen(true)
+  }, [sessionId])
+
+  useEffect(() => {
+    void getInterviewSessionById(sessionId)
+      .then((record) => {
+        if (!record) return
+        const round = getInterviewRound(record.roundId)
+        setBriefing(round ? composeInterviewBriefing(round, record.jobBriefing || record.briefingPreview || "") : record.jobBriefing || "")
+        if (record?.playMode === "simulation") setPlayMode("simulation")
+      })
+      .catch(() => {})
   }, [sessionId])
 
   return (
@@ -118,7 +252,9 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
           analysisStorageKey={analysisStorageKey}
           interviewSessionId={sessionId}
           interviewPlayMode={playMode}
-          onInterviewActivity={() => touchInterviewSession(sessionId)}
+          onInterviewActivity={() => {
+            void touchInterviewSession(sessionId)
+          }}
         />
       </ResumeWorkspaceProvider>
 
@@ -268,7 +404,7 @@ function CareerInner({
     if (briefing) {
       briefingRef.current = briefing
       ws.setJd(briefing)
-    } else {
+    } else if (mode !== "interview") {
       try {
         const raw = window.sessionStorage.getItem(CAREER_BRIEFING_KEY)
         if (raw) {
@@ -374,9 +510,7 @@ function CareerInner({
 
   const resetInterviewAnalysis = useCallback(() => {
     if (!analysisStorageKey || mode !== "interview") return
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(analysisStorageKey)
-    }
+    void deleteInterviewAgentStateKeys([analysisStorageKey])
     setAnalysisResetId((id) => id + 1)
   }, [analysisStorageKey, mode])
 

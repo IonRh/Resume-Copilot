@@ -50,7 +50,7 @@ interface CareerIntakeDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-/** Briefing 在跳转期间通过 sessionStorage 传给专注页 */
+/** 非面试专注页的跳转 briefing；模拟面试记录统一走 SQLite。 */
 export const CAREER_BRIEFING_KEY = "career-briefing"
 
 export default function CareerIntakeDialog({
@@ -106,7 +106,7 @@ export default function CareerIntakeDialog({
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, streamText])
 
-  const finalize = (briefing: string) => {
+  const finalize = async (briefing: string) => {
     const id = selectedId ?? resumes[0]?.id
     if (!id) return
     const sessionId =
@@ -121,7 +121,7 @@ export default function CareerIntakeDialog({
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     if (mode === "interview") {
       const jobBriefing = extractJobBriefing(briefing)
-      upsertInterviewSession({
+      await upsertInterviewSession({
         id: sessionId,
         campaignId,
         resumeId: id,
@@ -137,13 +137,15 @@ export default function CareerIntakeDialog({
         updatedAt: now,
       })
     }
-    try {
-      sessionStorage.setItem(
-        CAREER_BRIEFING_KEY,
-        JSON.stringify({ mode, resumeId: id, briefing, sessionId, roundId: selectedRoundId, playMode }),
-      )
-    } catch {
-      /* 退化：无 briefing 也能进入 */
+    if (mode !== "interview") {
+      try {
+        sessionStorage.setItem(
+          CAREER_BRIEFING_KEY,
+          JSON.stringify({ mode, resumeId: id, briefing, sessionId, roundId: selectedRoundId, playMode }),
+        )
+      } catch {
+        /* 退化：无 briefing 也能进入 */
+      }
     }
     onOpenChange(false)
     router.push(mode === "interview" ? `/career/${mode}/${id}?session=${encodeURIComponent(sessionId)}` : `/career/${mode}/${id}`)
@@ -202,7 +204,7 @@ export default function CareerIntakeDialog({
   }
 
   const enoughAction = () => {
-    finalize(buildBriefing())
+    void finalize(buildBriefing())
   }
 
   const send = async (raw: string) => {
@@ -286,7 +288,7 @@ export default function CareerIntakeDialog({
             briefing = ""
           }
           const result = researchResultRef.current
-          finalize(
+          void finalize(
             mode === "interview" && result && !(briefing || "").includes(result.slice(0, 80))
               ? [briefing || buildBriefing(), "", "【公司与岗位研究】", result].filter(Boolean).join("\n")
               : briefing || buildBriefing(),

@@ -8,6 +8,7 @@ import { buildSystemPrompt, JD_RESCORE_INSTRUCTION } from "@/lib/agent/prompts"
 import { streamChat } from "@/lib/agent/stream"
 import {
   BUILD_TOOL_SCHEMAS,
+  COVER_LETTER_TOOL_SCHEMAS,
   DESIGN_TOOL_SCHEMAS,
   DISCOVER_TOOL_SCHEMAS,
   EDIT_TOOL_SCHEMAS,
@@ -20,7 +21,7 @@ import {
   QUANTIFY_TOOL_SCHEMAS,
   SCORE_TOOL_SCHEMAS,
 } from "@/lib/agent/tool-schemas"
-import type { AgentMode, ChatContentPart, ChatMessage, WorkspaceSelection } from "@/lib/agent/types"
+import type { AgentMode, ChatContentPart, ChatMessage, CoverLetterDraft, WorkspaceSelection } from "@/lib/agent/types"
 import { useInterviewRuntime } from "@/lib/interview-runtime-context"
 
 const HISTORY_LIMIT = 24
@@ -38,6 +39,8 @@ function toolsForMode(mode: AgentMode, interviewPlayMode?: "practice" | "simulat
       return SCORE_TOOL_SCHEMAS
     case "discover":
       return DISCOVER_TOOL_SCHEMAS
+    case "coverLetter":
+      return COVER_LETTER_TOOL_SCHEMAS
     case "jd":
       return JD_TOOL_SCHEMAS
     case "interview":
@@ -56,7 +59,7 @@ function toolsForMode(mode: AgentMode, interviewPlayMode?: "practice" | "simulat
   }
 }
 
-export function useAgent(workspace?: WorkspaceContextValue) {
+export function useAgent(workspace?: WorkspaceContextValue, opts?: { onCoverLetter?: (draft: CoverLetterDraft) => void }) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
   const interviewRuntime = useInterviewRuntime()
@@ -218,6 +221,9 @@ export function useAgent(workspace?: WorkspaceContextValue) {
             if (result.card) {
               ws.addCard(assistantId, result.card)
               if (result.card.type === "jd") ws.setJdMatch(result.card)
+            }
+            if (result.coverLetter) {
+              opts?.onCoverLetter?.(result.coverLetter)
             }
             ws.patchStep(assistantId, stepId, {
               status: result.ok ? "done" : "error",
@@ -406,6 +412,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
 function stepLabel(tool: string): string {
   const map: Record<string, string> = {
     get_resume: "读取简历结构",
+    set_cover_letter: "写入自荐信",
     research_company_interview: "深入研究公司中",
     update_element_text: "改写文本",
     update_title: "更新标题",

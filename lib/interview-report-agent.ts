@@ -50,7 +50,7 @@ export async function generateCampaignReport(args: {
   campaignSessions: InterviewSessionRecord[]
   signal?: AbortSignal
 }): Promise<FullInterviewReport> {
-  const input = buildReportInput(args.picks, args.campaignSessions)
+  const input = await buildReportInput(args.picks, args.campaignSessions)
   const selectedRoundIds = new Set(input.rounds.map((round) => round.roundId))
   const roundOrder = INTERVIEW_ROUNDS
     .filter((round) => selectedRoundIds.has(round.id))

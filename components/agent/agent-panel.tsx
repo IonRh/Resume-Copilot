@@ -22,7 +22,7 @@ import {
 import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
-import type { AgentCard, AgentMode, AgentTurn, ChatContentPart } from "@/lib/agent/types"
+import type { AgentCard, AgentMode, AgentTurn, ChatContentPart, CoverLetterDraft } from "@/lib/agent/types"
 import {
   DiffCard,
   DiscoverCard,
@@ -60,6 +60,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   onUserSubmit?: (text: string) => void
   onUserTurnComplete?: (text: string) => void
   onNewSession?: (mode: AgentMode) => void
+  onCoverLetter?: (draft: CoverLetterDraft) => void
 }>(function AgentPanel({
   asOverlay = false,
   lockedMode,
@@ -68,10 +69,11 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   onUserSubmit,
   onUserTurnComplete,
   onNewSession,
+  onCoverLetter,
 }, ref) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
-  const { send, retry, stop, rescore, running, rescoring, error } = useAgent(ws)
+  const { send, retry, stop, rescore, running, rescoring, error } = useAgent(ws, { onCoverLetter })
   const [input, setInput] = useState("")
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
@@ -460,6 +462,8 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               placeholder={
                 lockedMode === "interview"
                   ? "输入你的回答，面试官会继续追问"
+                  : lockedMode === "coverLetter"
+                    ? "告诉我目标岗位、公司或粘贴 JD"
                   : lockedMode === "build"
                     ? ""
                     : "描述你的需求，如「润色工作经历」（@ 引用模块）"

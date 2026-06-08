@@ -131,7 +131,7 @@ type PersistedStagedChange = {
   change: PersistedChange
   status: StagedChange["status"]
 }
-type PersistedAgentState = {
+export type PersistedAgentState = {
   sessions?: AgentSession[]
   activeSessionId?: string
   turns?: AgentTurn[]
@@ -139,6 +139,34 @@ type PersistedAgentState = {
   jd?: string
   jdMatch?: JdMatchState | null
   mode?: AgentMode
+}
+
+function shouldUseInterviewAgentApi(storageKey: string): boolean {
+  return storageKey.startsWith("resume.career.interview.")
+}
+
+async function loadPersistedAgentState(storageKey: string): Promise<PersistedAgentState | null> {
+  if (!shouldUseInterviewAgentApi(storageKey)) {
+    const raw = window.localStorage.getItem(storageKey)
+    return raw ? (JSON.parse(raw) as PersistedAgentState) : null
+  }
+  const res = await fetch(`/api/interviews/agent-state?key=${encodeURIComponent(storageKey)}`, { cache: "no-store" })
+  if (!res.ok) throw new Error("读取面试对话失败")
+  const data = (await res.json()) as { state?: PersistedAgentState | null }
+  return data.state || null
+}
+
+async function savePersistedAgentState(storageKey: string, state: PersistedAgentState): Promise<void> {
+  if (!shouldUseInterviewAgentApi(storageKey)) {
+    window.localStorage.setItem(storageKey, JSON.stringify(state))
+    return
+  }
+  const res = await fetch("/api/interviews/agent-state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key: storageKey, state }),
+  })
+  if (!res.ok) throw new Error("保存面试对话失败")
 }
 
 function appendTextPart(parts: AssistantTurnPart[] | undefined, text: string): AssistantTurnPart[] {
@@ -535,25 +563,25 @@ export function ResumeWorkspaceProvider({
     if (hydratedRef.current) return
     hydratedRef.current = true
     if (typeof window === "undefined") return
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      if (!raw) {
-        dispatch({ type: "SET_HYDRATED" })
-        return
-      }
-      const parsed = JSON.parse(raw) as PersistedAgentState
-      const hydrated = hydrateAgentState(parsed)
-      dispatch({
-        type: "HYDRATE",
-        sessions: hydrated.sessions,
-        activeSessionId: hydrated.activeSessionId,
-        jd: parsed.jd || "",
-        jdMatch: parsed.jdMatch || null,
+    void loadPersistedAgentState(storageKey)
+      .then((parsed) => {
+        if (!parsed) {
+          dispatch({ type: "SET_HYDRATED" })
+          return
+        }
+        const hydrated = hydrateAgentState(parsed)
+        dispatch({
+          type: "HYDRATE",
+          sessions: hydrated.sessions,
+          activeSessionId: hydrated.activeSessionId,
+          jd: parsed.jd || "",
+          jdMatch: parsed.jdMatch || null,
+        })
       })
-    } catch {
-      /* ignore corrupt cache */
-      dispatch({ type: "SET_HYDRATED" })
-    }
+      .catch(() => {
+        /* ignore corrupt cache */
+        dispatch({ type: "SET_HYDRATED" })
+      })
   }, [storageKey])
 
   useEffect(() => {
@@ -587,15 +615,12 @@ export function ResumeWorkspaceProvider({
             status: s.status,
           })),
         }))
-        window.localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            sessions,
-            activeSessionId: state.activeSessionId,
-            jd: state.jd,
-            jdMatch: state.jdMatch,
-          }),
-        )
+        void savePersistedAgentState(storageKey, {
+          sessions,
+          activeSessionId: state.activeSessionId,
+          jd: state.jd,
+          jdMatch: state.jdMatch,
+        })
       } catch {
         /* quota / serialization errors are non-fatal */
       }

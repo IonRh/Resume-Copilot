@@ -256,8 +256,8 @@ export default function UserCenter() {
     open: false,
     mode: "jd",
   })
-  const [polishDialogOpen, setPolishDialogOpen] = useState(false)
-  const [polishResumeId, setPolishResumeId] = useState<string | undefined>(undefined)
+  const [coverLetterDialogOpen, setCoverLetterDialogOpen] = useState(false)
+  const [coverLetterResumeId, setCoverLetterResumeId] = useState<string | undefined>(undefined)
   const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
   const [discoverResumeId, setDiscoverResumeId] = useState<string | undefined>(undefined)
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(new Set())
@@ -502,14 +502,14 @@ export default function UserCenter() {
     [items],
   )
 
-  const openPolishDialog = useCallback(
+  const openCoverLetterDialog = useCallback(
     () => {
       if (!mostRecent) {
         toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
         return
       }
-      setPolishResumeId(mostRecent.id)
-      setPolishDialogOpen(true)
+      setCoverLetterResumeId(mostRecent.id)
+      setCoverLetterDialogOpen(true)
     },
     [mostRecent, toast],
   )
@@ -527,18 +527,18 @@ export default function UserCenter() {
     [router],
   )
 
-  // 简历润色入口：先选简历，再把待办指令写入 sessionStorage 并进入工作区
-  const startPolish = useCallback(
+  // 自荐信入口：先选简历，再进入专属工作台，由右侧 Agent 询问岗位/JD 并写入左侧信件
+  const startCoverLetter = useCallback(
     () => {
-      const id = polishResumeId || mostRecent?.id
+      const id = coverLetterResumeId || mostRecent?.id
       if (!id) {
-        toast({ title: "请选择简历", description: "选择一份简历后再进入润色。" })
+        toast({ title: "请选择简历", description: "选择一份简历后再生成自荐信。" })
         return
       }
-      setPolishDialogOpen(false)
-      runPolish(id)
+      setCoverLetterDialogOpen(false)
+      router.push(`/career/coverLetter/${id}`)
     },
-    [mostRecent?.id, polishResumeId, runPolish, toast],
+    [coverLetterResumeId, mostRecent?.id, router, toast],
   )
 
   // 岗位方向推荐：先选简历，再进入专注工作台，由 AI 反推适合的方向
@@ -632,10 +632,10 @@ export default function UserCenter() {
               action: openDiscoverDialog,
             },
             {
-              icon: "mdi:auto-fix",
-              title: "AI 简历润色",
-              desc: "先选择简历，再逐句润色并量化成果",
-              action: openPolishDialog,
+              icon: "mdi:email-edit-outline",
+              title: "自荐信生成",
+              desc: "选择简历，生成岗位投递自荐信",
+              action: openCoverLetterDialog,
             },
             {
               icon: "mdi:target",
@@ -1077,24 +1077,24 @@ export default function UserCenter() {
         </DialogContent>
       </Dialog>
 
-      {/* AI 简历润色：先选择简历 */}
-      <Dialog open={polishDialogOpen} onOpenChange={setPolishDialogOpen}>
+      {/* 自荐信生成：先选择简历 */}
+      <Dialog open={coverLetterDialogOpen} onOpenChange={setCoverLetterDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <form
             className="grid gap-4"
             onSubmit={(event) => {
               event.preventDefault()
-              startPolish()
+              startCoverLetter()
             }}
           >
             <DialogHeader>
-              <DialogTitle>选择要润色的简历</DialogTitle>
-              <DialogDescription>进入对应简历工作区后，AI 会自动开始整体润色。</DialogDescription>
+              <DialogTitle>选择用于自荐信的简历</DialogTitle>
+              <DialogDescription>进入专属工作台后，AI 会先询问目标岗位或 JD，再生成信件。</DialogDescription>
             </DialogHeader>
 
             <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
               {resumeChoices.map((it) => {
-                const active = polishResumeId === it.id
+                const active = coverLetterResumeId === it.id
                 return (
                   <button
                     key={it.id}
@@ -1104,10 +1104,10 @@ export default function UserCenter() {
                         ? "border-primary bg-primary/5"
                         : "border-border bg-card hover:border-primary/50 hover:bg-muted/40"
                     }`}
-                    onClick={() => setPolishResumeId(it.id)}
+                    onClick={() => setCoverLetterResumeId(it.id)}
                   >
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
-                      <Icon icon="mdi:file-document-edit-outline" className="h-4 w-4 text-primary" />
+                      <Icon icon="mdi:file-document-outline" className="h-4 w-4 text-primary" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{titleOf(it)}</span>
@@ -1125,11 +1125,11 @@ export default function UserCenter() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setPolishDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setCoverLetterDialogOpen(false)}>
                 取消
               </Button>
-              <Button type="submit" className="brand-gradient-bg border-0" disabled={!polishResumeId}>
-                <Icon icon="mdi:auto-fix" className="h-4 w-4" /> 进入润色
+              <Button type="submit" className="brand-gradient-bg border-0" disabled={!coverLetterResumeId}>
+                <Icon icon="mdi:email-edit-outline" className="h-4 w-4" /> 进入自荐信
               </Button>
             </DialogFooter>
           </form>

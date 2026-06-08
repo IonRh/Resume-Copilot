@@ -3,44 +3,36 @@
 import { streamChat } from "@/lib/agent/stream"
 import type { ChatMessage } from "@/lib/agent/types"
 import type { InterviewSessionRecord, InterviewRoundHandoff } from "@/types/interview-session"
-import { extractSessionTranscript, type SessionTranscript } from "@/lib/interview-report"
-
-const HANDOFF_STORAGE_KEY = "interview.handoffs.v1"
+import { loadSessionTranscript, type SessionTranscript } from "@/lib/interview-report"
 
 type StoredHandoff = InterviewRoundHandoff
 
-function readHandoffs(): StoredHandoff[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(HANDOFF_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as StoredHandoff[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw new Error(data.error || "交接评价请求失败")
+  return data
 }
 
-function writeHandoffs(items: StoredHandoff[]): void {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.setItem(HANDOFF_STORAGE_KEY, JSON.stringify(items.slice(0, 100)))
-  } catch {
-    /* ignore */
-  }
+export async function getStoredRoundHandoff(sessionId: string): Promise<InterviewRoundHandoff | undefined> {
+  const data = await requestJson<{ handoff?: InterviewRoundHandoff | null }>(
+    `/api/interviews/handoffs/${encodeURIComponent(sessionId)}`,
+    { cache: "no-store" },
+  )
+  return data.handoff || undefined
 }
 
-export function getStoredRoundHandoff(sessionId: string): InterviewRoundHandoff | undefined {
-  return readHandoffs().find((item) => item.fromSessionId === sessionId)
+export async function deleteStoredRoundHandoff(sessionId: string): Promise<void> {
+  await requestJson<{ deleted: boolean }>(`/api/interviews/handoffs/${encodeURIComponent(sessionId)}`, { method: "DELETE" })
 }
 
-export function deleteStoredRoundHandoff(sessionId: string): void {
-  writeHandoffs(readHandoffs().filter((item) => item.fromSessionId !== sessionId))
-}
-
-export function saveRoundHandoff(handoff: InterviewRoundHandoff): void {
-  const rest = readHandoffs().filter((item) => item.fromSessionId !== handoff.fromSessionId)
-  writeHandoffs([handoff, ...rest])
+export async function saveRoundHandoff(handoff: InterviewRoundHandoff): Promise<StoredHandoff> {
+  const data = await requestJson<{ handoff: StoredHandoff }>(`/api/interviews/handoffs/${encodeURIComponent(handoff.fromSessionId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ handoff }),
+  })
+  return data.handoff
 }
 
 function formatTranscriptForHandoff(transcript: SessionTranscript): string {
@@ -80,7 +72,7 @@ export async function generateRoundHandoff(args: {
   agentSessionId?: string
   signal?: AbortSignal
 }): Promise<InterviewRoundHandoff> {
-  const transcript = extractSessionTranscript(args.session, args.agentSessionId)
+  const transcript = await loadSessionTranscript(args.session, args.agentSessionId)
   const system = [
     "你是企业招聘流程里的面试交接评审人。",
     "你要基于上一轮模拟面试记录，生成给下一轮面试官看的内部交接评价。",
@@ -128,6 +120,5 @@ export async function generateRoundHandoff(args: {
     generatedAt: new Date().toISOString(),
     content: content || fallbackHandoff(args.session, transcript),
   }
-  saveRoundHandoff(handoff)
-  return handoff
+  return saveRoundHandoff(handoff)
 }

@@ -103,6 +103,24 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
       return { ok: true, message: buildResumeOutline(data) }
     }
 
+    case "set_cover_letter": {
+      const title = str(args.title) || "自荐信"
+      const body = str(args.body)
+      if (!body.trim()) return { ok: false, message: "缺少自荐信正文。" }
+      const scenarioRaw = str(args.scenario)
+      const scenario = ["formal", "short", "referral", "general"].includes(scenarioRaw)
+        ? (scenarioRaw as "formal" | "short" | "referral" | "general")
+        : undefined
+      const coverLetter = {
+        title,
+        body,
+        scenario,
+        highlights: Array.isArray(args.highlights) ? args.highlights.map(String).filter(Boolean) : undefined,
+        shortVersion: str(args.shortVersion) || undefined,
+      }
+      return { ok: true, message: "已写入左侧自荐信文档。", coverLetter }
+    }
+
     case "research_company_interview": {
       const company = str(args.company)
       const role = str(args.role)
