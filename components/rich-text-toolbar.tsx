@@ -42,9 +42,10 @@ const PRESET_COLORS = [
 
 interface RichTextToolbarProps {
   editor: Editor
+  layout?: "floating" | "inline"
 }
 
-export default function RichTextToolbar({ editor }: RichTextToolbarProps) {
+export default function RichTextToolbar({ editor, layout = "floating" }: RichTextToolbarProps) {
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
@@ -181,7 +182,13 @@ export default function RichTextToolbar({ editor }: RichTextToolbarProps) {
   }
 
   return (
-    <div className="bg-white text-slate-800 rounded shadow-lg p-1.5 space-y-1 min-w-[300px] text-xs border border-slate-200">
+    <div
+      className={
+        layout === "inline"
+          ? "cover-letter-toolbar w-full space-y-1 text-xs"
+          : "bg-white text-slate-800 rounded shadow-lg p-1.5 space-y-1 min-w-[300px] text-xs border border-slate-200"
+      }
+    >
       {/* Row 1: Font and Size */}
       <div className="flex items-center gap-1">
         <Select

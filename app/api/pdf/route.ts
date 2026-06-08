@@ -1,7 +1,7 @@
 ﻿import type { ResumeData } from "@/types/resume";
 import { configureChromiumRuntimeEnv } from "@/lib/chromium";
 import { generatePdfFilename } from "@/lib/resume-core/export";
-import { prepareResumeDataForPdf } from "@/lib/resume-core/pdf";
+import { ensureResumeAvatarOnPage, prepareResumeDataForPdf, resumeDataForSessionStorage, waitForResumeImages } from "@/lib/resume-core/pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,12 +112,13 @@ export async function POST(req: Request) {
     } catch { /* non-fatal */ }
     // 在任何脚本运行之前，将简历数据写入 sessionStorage，避免超长 URL 及 431 错误
     // 同时将远端头像资源内联为 data URL，避免因网络或拦截导致图片缺失
-    const preparedData = await prepareResumeDataForPdf(resumeData);
+    const preparedData = await prepareResumeDataForPdf(resumeData, origin);
+    const sessionPayload = resumeDataForSessionStorage(preparedData);
     await page.evaluateOnNewDocument((data) => {
       try {
         window.sessionStorage.setItem("resumeData", JSON.stringify(data));
       } catch { }
-    }, preparedData);
+    }, sessionPayload);
     await page.emulateMediaType("print");
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
     // 等待关键容器渲染：优先等待 .resume-content；若未出现则退而求其次等待 .pdf-preview-mode
@@ -154,6 +155,9 @@ export async function POST(req: Request) {
         }
       });
     } catch { }
+
+    await ensureResumeAvatarOnPage(page, preparedData.avatar);
+    await waitForResumeImages(page);
 
     async function doPrint() {
       return await page.pdf({

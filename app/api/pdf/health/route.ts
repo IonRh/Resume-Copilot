@@ -2,13 +2,12 @@ import { configureChromiumRuntimeEnv } from "@/lib/chromium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 10;
 
 export async function GET() {
   try {
     configureChromiumRuntimeEnv();
     const { default: chromium } = await import("@sparticuz/chromium");
-    const { default: puppeteer } = await import("puppeteer-core");
     const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH || "";
     const resolvedPath = envPath || (await chromium.executablePath());
     if (!resolvedPath) {
@@ -17,30 +16,6 @@ export async function GET() {
         headers: { "content-type": "application/json" },
       });
     }
-    const usingSystemChrome = !!envPath;
-    const launchArgs = usingSystemChrome
-      ? [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-      ]
-      : chromium.args;
-    // Puppeteer v23 headless option type is boolean | 'shell'.
-    // Use boolean true for both system Chrome (new headless) and bundled Chromium default.
-    const chromiumLaunchDefaults = chromium as unknown as Pick<
-      import("puppeteer-core").LaunchOptions,
-      "defaultViewport" | "headless"
-    >;
-    const headless: import("puppeteer-core").LaunchOptions["headless"] =
-      usingSystemChrome ? true : (chromiumLaunchDefaults.headless ?? true);
-    const browser = await puppeteer.launch({
-      args: launchArgs,
-      defaultViewport: chromiumLaunchDefaults.defaultViewport ?? { width: 1200, height: 1600, deviceScaleFactor: 2 },
-      executablePath: resolvedPath,
-      headless,
-    });
-    await browser.close();
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
     });

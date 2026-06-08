@@ -9,6 +9,7 @@ import PdfLoading from "@/components/pdf-loading";
 
 const FORCE_PRINT = process.env.NEXT_PUBLIC_FORCE_PRINT === "true";
 const FORCE_SERVER = process.env.NEXT_PUBLIC_FORCE_SERVER_PDF === "true";
+const SERVER_PDF_TIMEOUT_MS = 45000;
 
 async function fetchWithTimeout(input: RequestInfo, init?: RequestInit & { timeout?: number }) {
   const controller = new AbortController();
@@ -32,12 +33,12 @@ async function checkServerPdfAvailable(): Promise<boolean> {
   }
 }
 
-async function generateServerPdf(resumeData: ResumeData): Promise<Blob> {
-  const filename = generatePdfFilename(resumeData.title || "");
-  const res = await fetch(`/api/pdf/${filename}`, {
+async function postServerPdf(resumeData: ResumeData, filename = generatePdfFilename(resumeData.title || "")): Promise<Response> {
+  const res = await fetchWithTimeout(`/api/pdf/${filename}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ resumeData }),
+    timeout: SERVER_PDF_TIMEOUT_MS,
   });
   if (!res.ok) {
     // Try to surface server-side error details
@@ -53,7 +54,17 @@ async function generateServerPdf(resumeData: ResumeData): Promise<Blob> {
     } catch { }
     throw new Error(`Failed to generate PDF (${res.status}). ${detail}`);
   }
+  return res;
+}
+
+async function generateServerPdf(resumeData: ResumeData): Promise<Blob> {
+  const res = await postServerPdf(resumeData);
   return await res.blob();
+}
+
+async function generateServerPdfUrl(resumeData: ResumeData, filename: string): Promise<string> {
+  const res = await postServerPdf(resumeData, filename);
+  return res.url || `/api/pdf/${filename}`;
 }
 
 export type Mode = "loading" | "server" | "fallback";
@@ -140,31 +151,24 @@ export function PDFViewer({
         return;
       }
 
-      // 在外部容器模式下，直接通过表单 POST 跳转到 /api/pdf
       if (renderNotice === "external") {
         if (!mounted) return;
         setMode("server");
         onModeChange?.("server");
-        // 延迟一个宏任务，保证 spinner 先渲染
-        setTimeout(() => {
-          try {
-            const form = document.createElement("form");
-            form.method = "POST";
-            const parsed: ResumeData = JSON.parse(resumeKey);
-            const targetName = serverFilename || generatePdfFilename(parsed.title || "");
-            form.action = `/api/pdf/${targetName}`;
-            form.style.display = "none";
-            const textarea = document.createElement("textarea");
-            textarea.name = "resumeData";
-            textarea.value = JSON.stringify(parsed);
-            form.appendChild(textarea);
-            document.body.appendChild(form);
-            form.submit();
-            // 提交后页面将导航至浏览器内置 PDF 查看器
-          } catch (e) {
-            console.error(e);
-          }
-        }, 0);
+        await new Promise((r) => setTimeout(r, 0));
+        try {
+          const parsed: ResumeData = JSON.parse(resumeKey);
+          const targetName = serverFilename || generatePdfFilename(parsed.title || "");
+          const url = await generateServerPdfUrl(parsed, targetName);
+          if (!mounted || genIdRef.current !== currentId) return;
+          window.location.assign(url);
+        } catch (e) {
+          console.error(e);
+          if (!mounted || genIdRef.current !== currentId) return;
+          setError(e instanceof Error ? e.message : String(e));
+          setMode("fallback");
+          onModeChange?.("fallback");
+        }
         return;
       }
 

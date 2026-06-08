@@ -8,8 +8,8 @@ import type { StoredResume } from "@/types/resume"
 import { getResumeById } from "@/lib/storage"
 import CareerWorkspace from "@/components/workspace/career-workspace"
 
-type CareerMode = "jd" | "interview" | "discover" | "coverLetter"
-const VALID_MODES: CareerMode[] = ["jd", "interview", "discover", "coverLetter"]
+type CareerMode = "jd" | "interview" | "discover"
+const VALID_MODES: CareerMode[] = ["jd", "interview", "discover"]
 
 export default function CareerPage({ params }: { params: Promise<{ mode: string; id: string }> }) {
   const { mode, id } = use(params)
@@ -21,9 +21,15 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
   const isValidMode = VALID_MODES.includes(mode as CareerMode)
 
   useEffect(() => {
+    if (mode === "coverLetter") {
+      router.replace(id ? `/cover-letters?resume=${encodeURIComponent(id)}` : "/cover-letters")
+    }
+  }, [id, mode, router])
+
+  useEffect(() => {
     let cancelled = false
     setLoaded(false)
-    if (!isValidMode) {
+    if (!isValidMode || mode === "coverLetter") {
       setEntry(null)
       setLoaded(true)
       return
@@ -41,7 +47,11 @@ export default function CareerPage({ params }: { params: Promise<{ mode: string;
     return () => {
       cancelled = true
     }
-  }, [id, isValidMode])
+  }, [id, isValidMode, mode])
+
+  if (mode === "coverLetter") {
+    return <main className="min-h-screen bg-background" />
+  }
 
   if (loaded && (!isValidMode || !entry)) {
     return (

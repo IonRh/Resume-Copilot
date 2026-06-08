@@ -30,9 +30,9 @@ import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
 import ResumePreview from "@/components/resume-preview"
 import ExportButton from "@/components/export-button"
 import AgentPanel, { type AgentPanelHandle } from "@/components/agent/agent-panel"
-import type { AgentCard, CoverLetterDraft, WorkspaceSelection } from "@/lib/agent/types"
+import type { AgentCard, WorkspaceSelection } from "@/lib/agent/types"
 
-type CareerMode = "jd" | "interview" | "discover" | "coverLetter"
+type CareerMode = "jd" | "interview" | "discover"
 
 interface CareerWorkspaceProps {
   mode: CareerMode
@@ -47,168 +47,10 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
   if (props.mode === "interview") {
     return <InterviewWorkspace {...props} />
   }
-  if (props.mode === "coverLetter") {
-    return (
-      <ResumeWorkspaceProvider initialData={props.initialData} storageKey={storageKey}>
-        <CoverLetterWorkspace {...props} />
-      </ResumeWorkspaceProvider>
-    )
-  }
   return (
     <ResumeWorkspaceProvider initialData={props.initialData} storageKey={storageKey}>
       <CareerInner {...props} />
     </ResumeWorkspaceProvider>
-  )
-}
-
-const emptyCoverLetter: CoverLetterDraft = {
-  title: "",
-  body: "",
-  scenario: "general",
-  highlights: [],
-  shortVersion: "",
-}
-
-function CoverLetterWorkspace({ entryId, initialData, onBack }: CareerWorkspaceProps) {
-  const ws = useResumeWorkspace()
-  const { setAgentOpen, setMode } = ws
-  const profile = AGENT_PROFILES.coverLetter
-  const storageKey = `resume.coverLetter.${entryId}`
-  const hydratedRef = useRef(false)
-  const [draft, setDraft] = useState<CoverLetterDraft>(emptyCoverLetter)
-  const [copied, setCopied] = useState<"body" | "short" | null>(null)
-
-  useEffect(() => {
-    setMode("coverLetter")
-    setAgentOpen(true)
-  }, [setAgentOpen, setMode])
-
-  useEffect(() => {
-    if (hydratedRef.current || typeof window === "undefined") return
-    hydratedRef.current = true
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      if (raw) {
-        const parsed = JSON.parse(raw) as CoverLetterDraft
-        setDraft({ ...emptyCoverLetter, ...parsed })
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [storageKey])
-
-  useEffect(() => {
-    if (!hydratedRef.current || typeof window === "undefined") return
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(draft))
-    } catch {
-      /* ignore */
-    }
-  }, [draft, storageKey])
-
-  const copyText = useCallback(async (kind: "body" | "short", text: string) => {
-    if (!text.trim()) return
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(kind)
-      window.setTimeout(() => setCopied(null), 1400)
-    } catch {
-      /* clipboard may be unavailable */
-    }
-  }, [])
-
-  const hasBody = draft.body.trim().length > 0
-
-  return (
-    <div className="rw-shell">
-      <div className="rw-toolbar">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="brand-gradient-bg grid h-7 w-7 place-items-center rounded-lg">
-            <Icon icon={profile.icon} className="h-4 w-4" />
-          </span>
-          <h1 className="hidden text-base font-semibold sm:block">{profile.name}</h1>
-          <Badge variant="secondary" className="max-w-[220px] truncate text-xs">
-            {initialData.title || "未命名"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          {onBack ? (
-            <Button variant="outline" size="sm" onClick={() => onBack?.()} className="gap-2 bg-transparent">
-              <Icon icon="mdi:arrow-left" className="h-4 w-4" />
-              <span className="hidden sm:inline">返回</span>
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-2 bg-transparent"
-            disabled={!hasBody}
-            onClick={() => void copyText("body", draft.body)}
-            title="复制正式版"
-          >
-            <Icon icon={copied === "body" ? "mdi:check" : "mdi:content-copy"} className="h-4 w-4" />
-            <span className="hidden sm:inline">{copied === "body" ? "已复制" : "复制"}</span>
-          </Button>
-        </div>
-      </div>
-
-      <div className="cover-letter-body">
-        <section className="cover-letter-pane">
-          <div className="cover-letter-paper">
-            <input
-              value={draft.title}
-              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-              placeholder="自荐信标题"
-              className="cover-letter-title"
-            />
-            <textarea
-              value={draft.body}
-              onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
-              placeholder="右侧 Agent 会先询问目标岗位或 JD，然后把自荐信写到这里。"
-              className="cover-letter-editor"
-            />
-          </div>
-
-          {draft.shortVersion?.trim() || draft.highlights?.length ? (
-            <div className="cover-letter-side">
-              {draft.shortVersion?.trim() ? (
-                <div className="cover-letter-note">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-semibold">简短版</div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-1 px-2 text-xs"
-                      onClick={() => void copyText("short", draft.shortVersion || "")}
-                    >
-                      <Icon icon={copied === "short" ? "mdi:check" : "mdi:content-copy"} className="h-3.5 w-3.5" />
-                      {copied === "short" ? "已复制" : "复制"}
-                    </Button>
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{draft.shortVersion}</p>
-                </div>
-              ) : null}
-
-              {draft.highlights?.length ? (
-                <div className="cover-letter-note">
-                  <div className="text-xs font-semibold">引用依据</div>
-                  <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
-                    {draft.highlights.map((item, index) => (
-                      <li key={`${item}-${index}`} className="flex gap-1.5">
-                        <Icon icon="mdi:check-circle-outline" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
-
-        <AgentPanel lockedMode="coverLetter" onCoverLetter={(next) => setDraft({ ...emptyCoverLetter, ...next })} />
-      </div>
-    </div>
   )
 }
 

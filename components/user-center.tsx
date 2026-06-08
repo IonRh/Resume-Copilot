@@ -256,8 +256,6 @@ export default function UserCenter() {
     open: false,
     mode: "jd",
   })
-  const [coverLetterDialogOpen, setCoverLetterDialogOpen] = useState(false)
-  const [coverLetterResumeId, setCoverLetterResumeId] = useState<string | undefined>(undefined)
   const [discoverDialogOpen, setDiscoverDialogOpen] = useState(false)
   const [discoverResumeId, setDiscoverResumeId] = useState<string | undefined>(undefined)
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(new Set())
@@ -502,17 +500,9 @@ export default function UserCenter() {
     [items],
   )
 
-  const openCoverLetterDialog = useCallback(
-    () => {
-      if (!mostRecent) {
-        toast({ title: "还没有简历", description: "请先创建一份简历，再使用求职工具。" })
-        return
-      }
-      setCoverLetterResumeId(mostRecent.id)
-      setCoverLetterDialogOpen(true)
-    },
-    [mostRecent, toast],
-  )
+  const openCoverLetters = useCallback(() => {
+    router.push("/cover-letters")
+  }, [router])
 
   // 进入指定简历的润色工作区：写入待办指令后跳转
   const runPolish = useCallback(
@@ -525,20 +515,6 @@ export default function UserCenter() {
       router.push(`/edit/${id}`)
     },
     [router],
-  )
-
-  // 自荐信入口：先选简历，再进入专属工作台，由右侧 Agent 询问岗位/JD 并写入左侧信件
-  const startCoverLetter = useCallback(
-    () => {
-      const id = coverLetterResumeId || mostRecent?.id
-      if (!id) {
-        toast({ title: "请选择简历", description: "选择一份简历后再生成自荐信。" })
-        return
-      }
-      setCoverLetterDialogOpen(false)
-      router.push(`/career/coverLetter/${id}`)
-    },
-    [coverLetterResumeId, mostRecent?.id, router, toast],
   )
 
   // 岗位方向推荐：先选简历，再进入专注工作台，由 AI 反推适合的方向
@@ -633,9 +609,9 @@ export default function UserCenter() {
             },
             {
               icon: "mdi:email-edit-outline",
-              title: "自荐信生成",
-              desc: "选择简历，生成岗位投递自荐信",
-              action: openCoverLetterDialog,
+              title: "自荐信",
+              desc: "查看历史记录，撰写岗位投递自荐信",
+              action: openCoverLetters,
             },
             {
               icon: "mdi:target",
@@ -1071,65 +1047,6 @@ export default function UserCenter() {
               <Button type="submit" disabled={renaming || !renameValue.trim()} className="gap-2">
                 {renaming ? <Icon icon="mdi:loading" className="agent-spin h-4 w-4" /> : null}
                 保存
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* 自荐信生成：先选择简历 */}
-      <Dialog open={coverLetterDialogOpen} onOpenChange={setCoverLetterDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              startCoverLetter()
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>选择用于自荐信的简历</DialogTitle>
-              <DialogDescription>进入专属工作台后，AI 会先询问目标岗位或 JD，再生成信件。</DialogDescription>
-            </DialogHeader>
-
-            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-              {resumeChoices.map((it) => {
-                const active = coverLetterResumeId === it.id
-                return (
-                  <button
-                    key={it.id}
-                    type="button"
-                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-                      active
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/40"
-                    }`}
-                    onClick={() => setCoverLetterResumeId(it.id)}
-                  >
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
-                      <Icon icon="mdi:file-document-outline" className="h-4 w-4 text-primary" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{titleOf(it)}</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        更新于 {new Date(it.updatedAt).toLocaleString()}
-                      </span>
-                    </span>
-                    <Icon
-                      icon={active ? "mdi:radiobox-marked" : "mdi:radiobox-blank"}
-                      className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`}
-                    />
-                  </button>
-                )
-              })}
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCoverLetterDialogOpen(false)}>
-                取消
-              </Button>
-              <Button type="submit" className="brand-gradient-bg border-0" disabled={!coverLetterResumeId}>
-                <Icon icon="mdi:email-edit-outline" className="h-4 w-4" /> 进入自荐信
               </Button>
             </DialogFooter>
           </form>

@@ -1,6 +1,6 @@
 ﻿import type { ResumeData } from "@/types/resume";
 import { configureChromiumRuntimeEnv } from "@/lib/chromium";
-import { prepareResumeDataForPdf } from "@/lib/resume-core/pdf";
+import { ensureResumeAvatarOnPage, prepareResumeDataForPdf, resumeDataForSessionStorage, waitForResumeImages } from "@/lib/resume-core/pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,9 +113,10 @@ export async function POST(
       headless,
     });
     const page = await browser.newPage();
+    let pdf: Buffer | Uint8Array = Buffer.alloc(0);
 
-    // If SITE_PASSWORD is set, set the same auth cookie as middleware expects
     try {
+      // If SITE_PASSWORD is set, set the same auth cookie as middleware expects
       const pwd = (process.env.SITE_PASSWORD ?? "").trim();
       if (pwd) {
         const { createHash } = await import("node:crypto");
@@ -132,39 +133,44 @@ export async function POST(
       // Non-fatal: continue without cookie
     }
 
-    // Prepare data: inline avatar if remote
-    const preparedData = await prepareResumeDataForPdf(resumeData);
-    await page.evaluateOnNewDocument((data) => {
+    try {
+      // Prepare data: inline avatar if remote
+      const preparedData = await prepareResumeDataForPdf(resumeData, origin);
+      const sessionPayload = resumeDataForSessionStorage(preparedData);
+      await page.evaluateOnNewDocument((data) => {
+        try {
+          window.sessionStorage.setItem("resumeData", JSON.stringify(data));
+        } catch { }
+      }, sessionPayload);
+      await page.emulateMediaType("print");
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      try { await page.waitForSelector(".resume-content, .pdf-preview-mode", { timeout: 8000 }); } catch { await new Promise(r => setTimeout(r, 300)); }
       try {
-        window.sessionStorage.setItem("resumeData", JSON.stringify(data));
-      } catch { }
-    }, preparedData);
-    await page.emulateMediaType("print");
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    try { await page.waitForSelector(".resume-content, .pdf-preview-mode", { timeout: 20000 }); } catch { await new Promise(r => setTimeout(r, 500)); }
-    try {
-      const anyPage = page as unknown as { waitForNetworkIdle?: (opts: { idleTime?: number; timeout?: number }) => Promise<void> };
-      if (typeof anyPage.waitForNetworkIdle === "function") {
-        await anyPage.waitForNetworkIdle({ idleTime: 300, timeout: 10000 });
-      } else {
-        await new Promise(r => setTimeout(r, 300));
-      }
-    } catch { await new Promise(r => setTimeout(r, 300)); }
-    try {
-      await page.waitForFunction(() => {
-        const root = document.querySelector('.resume-content');
-        if (!root) return false;
-        return !!root.querySelector('.ProseMirror, .resume-module p, .resume-module li, .resume-module a, .resume-module span');
-      }, { timeout: 30000 });
-    } catch { }
-    try {
-      await page.evaluate(async () => {
-        const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
-        if (fonts?.ready) {
-          await fonts.ready;
+        const anyPage = page as unknown as { waitForNetworkIdle?: (opts: { idleTime?: number; timeout?: number }) => Promise<void> };
+        if (typeof anyPage.waitForNetworkIdle === "function") {
+          await anyPage.waitForNetworkIdle({ idleTime: 300, timeout: 3000 });
+        } else {
+          await new Promise(r => setTimeout(r, 300));
         }
-      });
-    } catch { }
+      } catch { await new Promise(r => setTimeout(r, 300)); }
+      try {
+        await page.waitForFunction(() => {
+          const root = document.querySelector('.resume-content');
+          if (!root) return false;
+          return !!root.querySelector('.ProseMirror, .resume-module p, .resume-module li, .resume-module a, .resume-module span');
+        }, { timeout: 8000 });
+      } catch { }
+      try {
+        await page.evaluate(async () => {
+          const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
+          if (fonts?.ready) {
+            await fonts.ready;
+          }
+        });
+      } catch { }
+
+      await ensureResumeAvatarOnPage(page, preparedData.avatar);
+      await waitForResumeImages(page);
 
     async function doPrint() {
       return await page.pdf({
@@ -174,7 +180,6 @@ export async function POST(
         preferCSSPageSize: true,
       });
     }
-    let pdf: Buffer | Uint8Array;
     try {
       pdf = await doPrint();
     } catch (e) {
@@ -186,7 +191,9 @@ export async function POST(
         throw e;
       }
     }
-    await browser.close();
+    } finally {
+      await browser.close().catch(() => undefined);
+    }
 
     // Content-Disposition with filename from URL param (await params for Next.js dynamic APIs)
     const awaitedParams = await Promise.resolve(

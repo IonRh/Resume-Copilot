@@ -4,6 +4,7 @@ import type {
   ModuleContentRow,
 } from "@/types/resume"
 import type { AgentCard, ChangeSet, InterviewDimensionScores, ToolResult } from "./types"
+import { markdownToDoc } from "@/lib/cover-letter-document"
 import {
   buildResumeOutline,
   docToText,
@@ -107,13 +108,15 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
       const title = str(args.title) || "自荐信"
       const body = str(args.body)
       if (!body.trim()) return { ok: false, message: "缺少自荐信正文。" }
+      const bodyContent = markdownToDoc(body)
       const scenarioRaw = str(args.scenario)
       const scenario = ["formal", "short", "referral", "general"].includes(scenarioRaw)
         ? (scenarioRaw as "formal" | "short" | "referral" | "general")
         : undefined
       const coverLetter = {
         title,
-        body,
+        body: docToText(bodyContent),
+        bodyContent,
         scenario,
         highlights: Array.isArray(args.highlights) ? args.highlights.map(String).filter(Boolean) : undefined,
         shortVersion: str(args.shortVersion) || undefined,

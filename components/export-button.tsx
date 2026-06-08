@@ -6,6 +6,13 @@ import { Icon } from "@iconify/react";
 import type { ResumeData } from "@/types/resume";
 import { cn } from "@/lib/utils";
 import { generatePdfFilename, prepareResumeDataForPreview } from "@/lib/resume-core";
+import { prepareResumeDataForClientExport } from "@/lib/resume-core/pdf";
+import {
+  broadcastPdfPreviewPayload,
+  createExportId,
+  openPdfPreviewWithHandshake,
+  stashPdfPreviewPayload,
+} from "@/lib/pdf-preview-bridge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -281,32 +288,32 @@ export function ExportButton({
     }
   }
 
-  const exportAsPDF = () => {
+  const exportAsPDF = async () => {
+    const normalized = prepareResumeDataForPreview(resumeData);
+    let prepared = normalized;
+    try {
+      prepared = await prepareResumeDataForClientExport(normalized);
+    } catch {
+      /* keep normalized */
+    }
     const filename = generatePdfFilename(resumeData.title || "");
-    const childWindow = window.open(`/pdf/preview/${filename}`, '_blank');
+    const exportId = createExportId();
+    stashPdfPreviewPayload(exportId, "resume", prepared);
+    broadcastPdfPreviewPayload("resume", exportId, prepared);
+
+    const path = `/pdf/preview/${encodeURIComponent(filename)}?export=${encodeURIComponent(exportId)}`;
+    const childWindow = openPdfPreviewWithHandshake(path, (child) => {
+      child.postMessage({ type: "resumeData", data: prepared }, "*");
+    });
+
     if (!childWindow) {
-      console.error('Failed to open popup window');
+      console.error("Failed to open popup window");
       toast({
         title: "导出失败",
         description: "无法打开 PDF 预览窗口，请检查浏览器弹窗设置",
         variant: "destructive",
       });
-      return;
     }
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source === childWindow && event.data.type === 'ready') {
-        childWindow.postMessage({ type: 'resumeData', data: resumeData }, '*');
-        window.removeEventListener('message', handleMessage);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-
-    // 设置超时，如果子窗口没有准备好
-    setTimeout(() => {
-      window.removeEventListener('message', handleMessage);
-    }, 5000); // 5秒超时
   };
 
   return (
@@ -327,7 +334,7 @@ export function ExportButton({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={exportAsPDF}>
+        <DropdownMenuItem onClick={() => void exportAsPDF()}>
           <Icon icon="mdi:file-pdf-box" className="w-4 h-4 mr-2" />
           PDF 格式
         </DropdownMenuItem>

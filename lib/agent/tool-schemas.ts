@@ -126,7 +126,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
           title: { type: "string", description: "自荐信标题，如「前端开发岗位自荐信」" },
           body: {
             type: "string",
-            description: "正式版自荐信正文。建议 250-500 字，结构自然，可包含称呼、匹配亮点、求职动机和结尾。",
+            description:
+              "正式版自荐信正文（Markdown）。支持 **加粗**、*斜体*、##/### 小标题、- 列表、> 引用；字号可用 {14pt}文字{/14pt}。建议 250-500 字，结构自然。",
           },
           scenario: {
             type: "string",

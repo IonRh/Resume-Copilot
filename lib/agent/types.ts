@@ -1,4 +1,4 @@
-import type { ResumeData } from "@/types/resume"
+import type { JSONContent, ResumeData } from "@/types/resume"
 
 /** 被选中/被引用元素的类型 */
 export type SelectionKind =
@@ -175,9 +175,14 @@ export interface DiscoverCard {
 
 export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard | DiscoverCard
 
+import type { JSONContent } from "@/types/resume"
+
 export interface CoverLetterDraft {
   title: string
-  body: string
+  /** 纯文本副本，便于复制与兼容旧数据 */
+  body?: string
+  /** 富文本正文（Tiptap JSON） */
+  bodyContent?: JSONContent
   scenario?: "formal" | "short" | "referral" | "general"
   highlights?: string[]
   shortVersion?: string
