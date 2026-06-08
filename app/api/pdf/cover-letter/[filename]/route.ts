@@ -143,16 +143,16 @@ export async function POST(
         }
       }, coverLetterData)
       await page.emulateMediaType("print")
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120000 })
       try {
-        await page.waitForSelector(".cover-letter-print-content, .pdf-preview-mode", { timeout: 8000 })
+        await page.waitForSelector(".cover-letter-print-content, .pdf-preview-mode", { timeout: 40000 })
       } catch {
-        await new Promise((r) => setTimeout(r, 300))
+        await new Promise((r) => setTimeout(r, 1000))
       }
       try {
         const anyPage = page as unknown as { waitForNetworkIdle?: (opts: { idleTime?: number; timeout?: number }) => Promise<void> }
         if (typeof anyPage.waitForNetworkIdle === "function") {
-          await anyPage.waitForNetworkIdle({ idleTime: 300, timeout: 3000 })
+          await anyPage.waitForNetworkIdle({ idleTime: 300, timeout: 20000 })
         } else {
           await new Promise((r) => setTimeout(r, 300))
         }
@@ -164,7 +164,7 @@ export async function POST(
           const root = document.querySelector(".cover-letter-print-content")
           if (!root) return false
           return !!root.querySelector(".ProseMirror, .cover-letter-print-body p, .cover-letter-print-body li")
-        }, { timeout: 8000 })
+        }, { timeout: 60000 })
       } catch {
         /* ignore */
       }

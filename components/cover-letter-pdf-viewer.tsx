@@ -8,7 +8,8 @@ import PdfLoading from "@/components/pdf-loading"
 
 const FORCE_PRINT = process.env.NEXT_PUBLIC_FORCE_PRINT === "true"
 const FORCE_SERVER = process.env.NEXT_PUBLIC_FORCE_SERVER_PDF === "true"
-const SERVER_PDF_TIMEOUT_MS = 45000
+const SERVER_PDF_TIMEOUT_MS = 240000
+const SERVER_PDF_HEALTH_TIMEOUT_MS = 40000
 
 async function fetchWithTimeout(input: RequestInfo, init?: RequestInit & { timeout?: number }) {
   const controller = new AbortController()
@@ -22,7 +23,7 @@ async function fetchWithTimeout(input: RequestInfo, init?: RequestInit & { timeo
 
 async function checkServerPdfAvailable(): Promise<boolean> {
   try {
-    const res = await fetchWithTimeout("/api/pdf/health", { method: "GET", timeout: 3000, cache: "no-store" })
+    const res = await fetchWithTimeout("/api/pdf/health", { method: "GET", timeout: SERVER_PDF_HEALTH_TIMEOUT_MS, cache: "no-store" })
     if (!res.ok) return false
     const data = await res.json().catch(() => ({}))
     return !!data.ok
@@ -85,7 +86,11 @@ export function CoverLetterPDFViewer({
           }
           if (cachedOk === null) {
             const ok = await checkServerPdfAvailable()
-            sessionStorage.setItem(KEY, JSON.stringify({ value: ok, expires: now + ttlMs }))
+            if (ok) {
+              sessionStorage.setItem(KEY, JSON.stringify({ value: ok, expires: now + ttlMs }))
+            } else {
+              sessionStorage.removeItem(KEY)
+            }
             available = ok
           } else {
             available = cachedOk
