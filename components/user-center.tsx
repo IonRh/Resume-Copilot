@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -658,6 +660,9 @@ export default function UserCenter() {
           {variantCount > 0 ? <Badge variant="outline">{variantCount} 份 JD 子简历</Badge> : null}
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => router.push("/about")}>
+            <Icon icon="mdi:information-outline" className="w-4 h-4" /> About
+          </Button>
           {items.length > 0 && (
             <>
               <Input
@@ -693,7 +698,7 @@ export default function UserCenter() {
       <Separator />
 
       {/* 列表（表格） */}
-      <div className="p-4 space-y-3">
+      <div className="space-y-3 p-4 pb-24">
         {items.length > 0 && (
           <div className="flex items-center gap-3 px-2">
             <input

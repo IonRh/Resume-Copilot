@@ -1,3 +1,5 @@
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 import type React from "react";
 import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";

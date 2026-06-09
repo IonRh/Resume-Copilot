@@ -43,6 +43,8 @@ export interface ChangeSet {
   after?: string
   /** 结构/样式类变更的补充说明 */
   note?: string
+  /** 自荐信工具的待确认草稿，接受后由自荐信工作台写入文档 */
+  coverLetterDraft?: CoverLetterDraft
   apply?: (data: ResumeData) => ResumeData
 }
 
@@ -174,8 +176,6 @@ export interface DiscoverCard {
 }
 
 export type AgentCard = ScoreCard | JdCard | InterviewCard | InterviewReportCard | DiscoverCard
-
-import type { JSONContent } from "@/types/resume"
 
 export interface CoverLetterDraft {
   title: string

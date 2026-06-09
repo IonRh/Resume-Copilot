@@ -239,4 +239,6 @@ SITE_PASSWORD=你的访问密码
 
 ## 许可证
 
-内部项目，许可证按项目所有者要求执行。
+MIT。详见 [LICENSE](./LICENSE)。
+
+本项目基于 [wzdnzd/resume](https://github.com/wzdnzd/resume) 修改，保留原项目 MIT 版权与许可声明。

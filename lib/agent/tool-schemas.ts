@@ -119,7 +119,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "set_cover_letter",
       description:
-        "写入或整体更新左侧自荐信文档。仅用于自荐信工作台：基于简历与用户提供的岗位/JD/公司信息生成可投递文本，不修改简历。",
+        "准备一条待用户确认的自荐信 diff。仅用于自荐信工作台：基于简历与用户提供的岗位/JD/公司信息生成可投递文本，不修改简历；用户接受后才会写入左侧文档。",
       parameters: {
         type: "object",
         properties: {
@@ -127,7 +127,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
           body: {
             type: "string",
             description:
-              "正式版自荐信正文（Markdown）。支持 **加粗**、*斜体*、##/### 小标题、- 列表、> 引用；字号可用 {14pt}文字{/14pt}。建议 250-500 字，结构自然。",
+              "正式版自荐信正文（Markdown）。支持 **加粗**、*斜体*、##/### 小标题、- 列表、> 引用；字号用 {14pt}文字{/14pt}，常用 10-18pt，可嵌套加粗/斜体，例如 {14pt}**重点句**{/14pt}。用户只要求改字号时，保留原文并仅调整字号标记。建议 250-500 字，结构自然。",
           },
           scenario: {
             type: "string",

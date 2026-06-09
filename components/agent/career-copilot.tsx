@@ -19,7 +19,6 @@ import {
   COPILOT_ACTION_META,
   COPILOT_KICKOFF,
   COPILOT_TOOLS,
-  attentionCount,
   buildCopilotContext,
   buildCopilotSystemPrompt,
   buildFallbackBriefing,
@@ -335,7 +334,6 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
     onAction(action)
   }
 
-  const badge = signals ? attentionCount(signals) : 0
   const pendingPreview = pendingAction ? actionPreview(pendingAction, resumes) : null
 
   return (
@@ -349,11 +347,6 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
           aria-label="打开求职管家"
         >
           <Icon icon="mdi:robot-happy-outline" className="h-7 w-7" />
-          {badge > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1 text-[11px] font-bold text-white">
-              {badge > 9 ? "9+" : badge}
-            </span>
-          ) : null}
         </button>
       ) : null}
 

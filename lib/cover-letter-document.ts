@@ -15,6 +15,14 @@ function withMark(nodes: JSONContent[], mark: InlineMark): JSONContent[] {
   })
 }
 
+function withFontSize(nodes: JSONContent[], fontSize: string): JSONContent[] {
+  return nodes.map((node) => {
+    if (node.type !== "text") return node
+    const marks = [...(node.marks || []), { type: "textStyle", attrs: { fontSize } }]
+    return { ...node, marks }
+  })
+}
+
 function parseInline(text: string): JSONContent[] {
   const nodes: JSONContent[] = []
   let remaining = text
@@ -50,13 +58,9 @@ function parseInline(text: string): JSONContent[] {
       continue
     }
 
-    const size = remaining.match(/^\{(\d+)pt\}(.+?)\{\/\1pt\}/)
+    const size = remaining.match(/^\{(\d{1,2})pt\}(.+?)\{\/\1pt\}/)
     if (size) {
-      nodes.push({
-        type: "text",
-        text: size[2],
-        marks: [{ type: "textStyle", attrs: { fontSize: `${size[1]}pt` } }],
-      })
+      nodes.push(...withFontSize(parseInline(size[2]), `${size[1]}pt`))
       remaining = remaining.slice(size[0].length)
       continue
     }

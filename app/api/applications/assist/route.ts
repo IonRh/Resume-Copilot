@@ -1,5 +1,6 @@
 import type { ResumeData } from "@/types/resume"
 import { assertResumeApiAuthorized, unauthorizedResponse } from "@/lib/server/api-auth"
+import { loadAiProviderConfig } from "@/lib/server/ai-config"
 import { buildResumeOutline } from "@/lib/agent/changeset"
 import { getStatusMeta, type ApplicationStatus } from "@/types/application"
 
@@ -83,11 +84,9 @@ export async function POST(req: Request) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return unauthorizedResponse()
   }
 
-  const apiKey = (process.env.OPENAI_API_KEY ?? "").trim()
-  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").trim()
-  const model = (process.env.OPENAI_MODEL ?? "gpt-5.5").trim()
+  const { apiKey, baseUrl, model } = await loadAiProviderConfig()
   if (!apiKey) {
-    return Response.json({ error: "未配置 OPENAI_API_KEY，无法生成投递建议。" }, { status: 500 })
+    return Response.json({ error: "未配置 API Key，无法生成投递建议。" }, { status: 500 })
   }
 
   let body: AssistRequest

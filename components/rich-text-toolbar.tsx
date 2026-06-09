@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

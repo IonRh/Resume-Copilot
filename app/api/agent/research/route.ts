@@ -1,3 +1,5 @@
+import { loadResearchProviderConfig } from "@/lib/server/ai-config"
+
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
@@ -40,17 +42,11 @@ function extractContent(payload: unknown): string {
 export async function POST(req: Request) {
   // 研究这一步可独立配置一个「自带联网搜索」的模型（如 grok-4.x console）。
   // 未单独配置时回退到主聊天模型的配置。
-  const apiKey = (process.env.RESEARCH_API_KEY ?? process.env.OPENAI_API_KEY ?? "").trim()
-  const baseUrl = (
-    process.env.RESEARCH_BASE_URL ??
-    process.env.OPENAI_BASE_URL ??
-    "https://api.openai.com/v1"
-  ).trim()
-  const model = (process.env.RESEARCH_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.5").trim()
+  const { apiKey, baseUrl, model } = await loadResearchProviderConfig()
 
   if (!apiKey) {
     return Response.json(
-      { error: "未配置 RESEARCH_API_KEY / OPENAI_API_KEY，请在 .env.local 中设置后重启服务。" },
+      { error: "未配置研究服务 API Key，请在 About 页面或 .env.local 中设置后重试。" },
       { status: 500 },
     )
   }

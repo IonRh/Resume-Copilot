@@ -1,3 +1,5 @@
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 import type { ResumeData } from "@/types/resume";
 import PrintContent from "@/components/print-content";
 import { normalizeResumeData } from "@/lib/resume-core";

@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { LOCAL_STORAGE_KEY } from "@/types/resume"

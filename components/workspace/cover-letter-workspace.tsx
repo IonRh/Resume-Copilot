@@ -47,6 +47,7 @@ function CoverLetterWorkspaceInner({ coverLetterId, resumeId, resumeTitle, initi
   const profile = AGENT_PROFILES.coverLetter
   const hydratedRef = useRef(false)
   const skipFirstSaveRef = useRef(true)
+  const appliedCoverLetterChangeIdsRef = useRef(new Set<string>())
   const [draft, setDraft] = useState<CoverLetterDraft>(emptyCoverLetter)
   const [copied, setCopied] = useState<"body" | "short" | null>(null)
   const [loading, setLoading] = useState(true)
@@ -115,6 +116,22 @@ function CoverLetterWorkspaceInner({ coverLetterId, resumeId, resumeTitle, initi
     const normalized = normalizeCoverLetterBody(next)
     setDraft({ ...emptyCoverLetter, ...next, ...normalized })
   }, [])
+
+  useEffect(() => {
+    for (const item of ws.staged) {
+      const draftFromChange = item.change.coverLetterDraft
+      if (
+        item.status !== "accepted" ||
+        !draftFromChange ||
+        item.hydrated ||
+        appliedCoverLetterChangeIdsRef.current.has(item.change.id)
+      ) {
+        continue
+      }
+      appliedCoverLetterChangeIdsRef.current.add(item.change.id)
+      applyCoverLetter(draftFromChange)
+    }
+  }, [applyCoverLetter, ws.staged])
 
   const handleBodyChange = useCallback((bodyContent: NonNullable<CoverLetterDraft["bodyContent"]>) => {
     setDraft((current) => ({
@@ -220,7 +237,7 @@ function CoverLetterWorkspaceInner({ coverLetterId, resumeId, resumeTitle, initi
           ) : null}
         </section>
 
-        <AgentPanel lockedMode="coverLetter" onCoverLetter={applyCoverLetter} />
+        <AgentPanel lockedMode="coverLetter" />
       </div>
     </div>
   )

@@ -1,3 +1,5 @@
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

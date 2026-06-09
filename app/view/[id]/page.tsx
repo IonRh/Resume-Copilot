@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 
 import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"

@@ -1,5 +1,6 @@
 import { EDIT_TOOL_SCHEMAS } from "@/lib/agent/tool-schemas"
 import type { ChatMessage } from "@/lib/agent/types"
+import { loadAiProviderConfig } from "@/lib/server/ai-config"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,13 +23,11 @@ function resolveEndpoint(baseUrl: string): string {
 }
 
 export async function POST(req: Request) {
-  const apiKey = (process.env.OPENAI_API_KEY ?? "").trim()
-  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").trim()
-  const model = (process.env.OPENAI_MODEL ?? "gpt-5.5").trim()
+  const { apiKey, baseUrl, model } = await loadAiProviderConfig()
 
   if (!apiKey) {
     return Response.json(
-      { error: "未配置 OPENAI_API_KEY，请在 .env.local 中设置后重启服务。" },
+      { error: "未配置 API Key，请在 About 页面或 .env.local 中设置后重试。" },
       { status: 500 },
     )
   }

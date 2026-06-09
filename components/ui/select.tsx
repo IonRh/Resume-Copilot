@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"

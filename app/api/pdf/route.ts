@@ -1,4 +1,6 @@
-﻿import type { ResumeData } from "@/types/resume";
+﻿// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
+import type { ResumeData } from "@/types/resume";
 import { configureChromiumRuntimeEnv } from "@/lib/chromium";
 import { generatePdfFilename } from "@/lib/resume-core/export";
 import { ensureResumeAvatarOnPage, prepareResumeDataForPdf, resumeDataForSessionStorage, waitForResumeImages } from "@/lib/resume-core/pdf";

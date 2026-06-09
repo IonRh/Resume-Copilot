@@ -201,6 +201,10 @@ function hydrateStaged(items: PersistedStagedChange[] | undefined): StagedChange
   }))
 }
 
+function isApplicableChange(change: ChangeSet): boolean {
+  return Boolean(change.apply || change.coverLetterDraft)
+}
+
 function createSession(mode: AgentMode = "edit", title = "新会话"): AgentSession {
   const ts = new Date().toISOString()
   return {
@@ -340,8 +344,9 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
     case "ACCEPT_CHANGE": {
       const active = state.sessions.find((s) => s.id === state.activeSessionId)
       const item = active?.staged.find((s) => s.change.id === action.id)
-      if (!item || item.status !== "pending" || !item.change.apply) return state
-      const past = [...state.past, state.resumeData].slice(-HISTORY_LIMIT)
+      if (!item || item.hydrated || item.status !== "pending" || !isApplicableChange(item.change)) return state
+      const isResumeChange = Boolean(item.change.apply && !item.change.coverLetterDraft)
+      const past = isResumeChange ? [...state.past, state.resumeData].slice(-HISTORY_LIMIT) : state.past
       return {
         ...mapActiveSession(state, (session) => ({
           ...session,
@@ -349,10 +354,10 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
             s.change.id === action.id ? { ...s, status: "accepted" } : s,
           ),
         })),
-        resumeData: stamp(item.change.apply(state.resumeData)),
+        resumeData: isResumeChange ? stamp(item.change.apply!(state.resumeData)) : state.resumeData,
         past,
-        future: [],
-        lastSource: "agent",
+        future: isResumeChange ? [] : state.future,
+        lastSource: isResumeChange ? "agent" : state.lastSource,
         highlightedIds: item.change.targetIds,
       }
     }
@@ -367,13 +372,14 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
 
     case "ACCEPT_ALL": {
       const active = state.sessions.find((s) => s.id === state.activeSessionId)
-      const pending = (active?.staged || []).filter((s) => s.status === "pending" && s.change.apply)
+      const pending = (active?.staged || []).filter((s) => s.status === "pending" && !s.hydrated && isApplicableChange(s.change))
       if (pending.length === 0) return state
       const acceptedIds = new Set(pending.map((s) => s.change.id))
-      const past = [...state.past, state.resumeData].slice(-HISTORY_LIMIT)
+      const resumePending = pending.filter((s) => s.change.apply && !s.change.coverLetterDraft)
+      const past = resumePending.length ? [...state.past, state.resumeData].slice(-HISTORY_LIMIT) : state.past
       let nextData = state.resumeData
       const highlight: string[] = []
-      pending.forEach((s) => {
+      resumePending.forEach((s) => {
         nextData = s.change.apply!(nextData)
         highlight.push(...s.change.targetIds)
       })
@@ -384,10 +390,10 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
             acceptedIds.has(s.change.id) ? { ...s, status: "accepted" } : s,
           ),
         })),
-        resumeData: stamp(nextData),
+        resumeData: resumePending.length ? stamp(nextData) : state.resumeData,
         past,
-        future: [],
-        lastSource: "agent",
+        future: resumePending.length ? [] : state.future,
+        lastSource: resumePending.length ? "agent" : state.lastSource,
         highlightedIds: highlight,
       }
     }
@@ -665,7 +671,7 @@ export function ResumeWorkspaceProvider({
     const staged = activeSession?.staged || []
     const turns = activeSession?.turns || []
     const mode = activeSession?.mode || "edit"
-    const pendingCount = staged.filter((s) => s.status === "pending" && s.change.apply).length
+    const pendingCount = staged.filter((s) => s.status === "pending" && !s.hydrated && isApplicableChange(s.change)).length
     return {
       resumeData: state.resumeData,
       selection: state.selection,

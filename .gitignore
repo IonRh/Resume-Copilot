@@ -23,12 +23,10 @@ yarn-error.log*
 # env files
 .env*
 
-# server-side resume data
-/data/resumes.json
-/data/resumes.json.tmp
-/data/resumes.sqlite
-/data/resumes.sqlite-shm
-/data/resumes.sqlite-wal
+# server-side runtime data
+/data/*
+!/data/templates/
+!/data/templates/**
 
 # vercel
 .vercel

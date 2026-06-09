@@ -1,3 +1,5 @@
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 /* eslint-disable @next/next/no-img-element */
 "use client"
 

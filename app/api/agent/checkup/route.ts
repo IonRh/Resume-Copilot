@@ -6,6 +6,7 @@ import {
   type AiCheckupIssue,
   type CheckupDimension,
 } from "@/lib/agent/checkup"
+import { loadAiProviderConfig } from "@/lib/server/ai-config"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -110,12 +111,10 @@ function normalizeReport(raw: unknown): AiCheckupReport {
 }
 
 export async function POST(req: Request) {
-  const apiKey = (process.env.OPENAI_API_KEY ?? "").trim()
-  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").trim()
-  const model = (process.env.OPENAI_MODEL ?? "gpt-5.5").trim()
+  const { apiKey, baseUrl, model } = await loadAiProviderConfig()
 
   if (!apiKey) {
-    return Response.json({ error: "未配置 OPENAI_API_KEY，无法执行 AI 体检。" }, { status: 500 })
+    return Response.json({ error: "未配置 API Key，无法执行 AI 体检。" }, { status: 500 })
   }
 
   let resumeData: ResumeData | null = null

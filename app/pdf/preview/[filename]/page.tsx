@@ -1,4 +1,6 @@
 "use client"
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import PdfLoading from "@/components/pdf-loading"

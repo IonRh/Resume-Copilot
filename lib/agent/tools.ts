@@ -121,7 +121,25 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
         highlights: Array.isArray(args.highlights) ? args.highlights.map(String).filter(Boolean) : undefined,
         shortVersion: str(args.shortVersion) || undefined,
       }
-      return { ok: true, message: "已写入左侧自荐信文档。", coverLetter }
+      const preview = [
+        `标题：${title}`,
+        coverLetter.body,
+        coverLetter.shortVersion ? `\n简短版：${coverLetter.shortVersion}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+      const change: ChangeSet = {
+        id: genId("chg"),
+        kind: "generate",
+        op: name,
+        summary: `生成自荐信「${title}」`,
+        targetIds: [],
+        before: "",
+        after: preview,
+        coverLetterDraft: coverLetter,
+        apply: (d) => d,
+      }
+      return { ok: true, message: "已准备自荐信草稿，等待用户确认后写入左侧文档。", change }
     }
 
     case "research_company_interview": {

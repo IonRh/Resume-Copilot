@@ -1,3 +1,5 @@
+// Copyright (c) 2025 wzdnzd
+// SPDX-License-Identifier: MIT
 import { configureChromiumRuntimeEnv } from "@/lib/chromium";
 
 export const runtime = "nodejs";
