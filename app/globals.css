@@ -449,6 +449,33 @@
   filter: brightness(1.06);
 }
 
+/* 小尺寸图标底：两色渐变，避免三色挤在小方块里发灰 */
+.brand-icon-bg {
+  background-image: linear-gradient(145deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 6px color-mix(in oklab, #7c3aed 22%, transparent);
+}
+
+.brand-icon-bg.rounded-full {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 4px 16px color-mix(in oklab, #7c3aed 30%, transparent);
+}
+
+.brand-pill-bg {
+  background-image: linear-gradient(145deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 14px color-mix(in oklab, #7c3aed 26%, transparent);
+}
+
+.brand-pill-bg:hover {
+  filter: brightness(1.04);
+}
+
 .brand-ring {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand-via) 35%, transparent);
 }
@@ -1515,6 +1542,87 @@
     radial-gradient(1200px 300px at 0% 0%, color-mix(in oklab, var(--brand-from) 16%, transparent), transparent),
     radial-gradient(900px 300px at 100% 100%, color-mix(in oklab, var(--brand-to) 16%, transparent), transparent),
     linear-gradient(180deg, var(--card), var(--background));
+}
+
+.auth-hero {
+  background-image:
+    radial-gradient(1200px 360px at 0% 0%, color-mix(in oklab, var(--brand-from) 16%, transparent), transparent),
+    radial-gradient(1000px 420px at 100% 100%, color-mix(in oklab, var(--brand-to) 16%, transparent), transparent),
+    linear-gradient(180deg, var(--card), var(--background));
+}
+
+@property --auth-glow-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes auth-feature-border-flow {
+  to {
+    --auth-glow-angle: 360deg;
+  }
+}
+
+.auth-feature-card {
+  --auth-glow-delay: 0s;
+  position: relative;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.375;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--background) 84%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 4%, transparent);
+}
+
+.auth-feature-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--auth-glow-angle),
+    transparent 0deg,
+    color-mix(in oklab, #8b5cf6 22%, transparent) 42deg,
+    color-mix(in oklab, #6366f1 16%, transparent) 78deg,
+    transparent 118deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: auth-feature-border-flow 7s linear infinite;
+  animation-delay: var(--auth-glow-delay);
+  pointer-events: none;
+}
+
+.auth-feature-card::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--auth-glow-angle),
+    transparent 0deg,
+    color-mix(in oklab, #8b5cf6 14%, transparent) 50deg,
+    transparent 100deg,
+    transparent 360deg
+  );
+  filter: blur(5px);
+  opacity: 0.61;
+  z-index: -1;
+  animation: auth-feature-border-flow 7s linear infinite;
+  animation-delay: var(--auth-glow-delay);
+  pointer-events: none;
 }
 
 /* 旋转加载点 */

@@ -3,22 +3,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-// Cookie name used for auth
 const AUTH_COOKIE = "site_auth";
 
-async function sha256(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export async function middleware(req: NextRequest) {
-  const password = (process.env.SITE_PASSWORD ?? "").trim();
-
-  // If no password configured, skip auth entirely
-  if (!password) return NextResponse.next();
-
   const { pathname } = req.nextUrl;
 
   // Allow public assets and the auth endpoints
@@ -35,9 +22,8 @@ export async function middleware(req: NextRequest) {
   }
 
   const cookie = req.cookies.get(AUTH_COOKIE)?.value || "";
-  const expected = await sha256(password);
 
-  if (cookie === expected) {
+  if (/^[a-z0-9_-]{2,32}:[a-f0-9]{64}$/i.test(cookie)) {
     return NextResponse.next();
   }
 

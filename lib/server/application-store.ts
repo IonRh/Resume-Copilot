@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
+import { getCurrentUsername } from "@/lib/server/api-auth"
 import type {
   ApplicationEvent,
   ApplicationStatus,
@@ -10,13 +12,30 @@ import type {
 import { APPLICATION_STATUS_FLOW, getStatusMeta } from "@/types/application"
 
 const DATA_DIR = path.join(process.cwd(), "data")
-const APPLICATION_STORE_PATH = path.join(DATA_DIR, "applications.json")
+const LEGACY_APPLICATION_STORE_PATH = path.join(DATA_DIR, "applications.json")
+const SQLITE_STORE_PATH = path.join(DATA_DIR, "applications.sqlite")
+const LEGACY_MIGRATION_KEY = "legacy_json_migrated"
 
 const VALID_STATUSES = new Set<ApplicationStatus>(APPLICATION_STATUS_FLOW.map((item) => item.value))
 
 type StoredApplicationFile = {
   version: 1
   applications: JobApplication[]
+}
+
+type ApplicationRow = {
+  id: string
+  owner: string
+  updated_at: string
+  application_json: string
+}
+
+type CountRow = {
+  count: number | bigint | null
+}
+
+type MetaRow = {
+  value: string | null
 }
 
 /** 创建/更新时允许客户端传入的字段 */
@@ -28,11 +47,12 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-// 进程内写锁：将所有“读-改-写”串行化，避免并发请求互相覆盖、写坏文件
 let writeChain: Promise<unknown> = Promise.resolve()
+let dbInstance: DatabaseSync | null = null
+let dbInit: Promise<DatabaseSync> | null = null
+
 function withLock<T>(task: () => Promise<T>): Promise<T> {
   const run = writeChain.then(task, task)
-  // 无论成功失败都让出锁，但不向后续任务传播异常
   writeChain = run.then(
     () => undefined,
     () => undefined,
@@ -72,6 +92,55 @@ async function ensureDataDir() {
   await mkdir(DATA_DIR, { recursive: true })
 }
 
+function configureDatabase(db: DatabaseSync) {
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 5000;
+  `)
+}
+
+function ensureSchema(db: DatabaseSync) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL DEFAULT 'admin',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      status TEXT NOT NULL,
+      company TEXT NOT NULL,
+      position TEXT NOT NULL,
+      application_json TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_applications_owner_updated_at ON applications(owner, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_applications_owner_status ON applications(owner, status, updated_at DESC);
+  `)
+}
+
+function getMeta(db: DatabaseSync, key: string): string | null {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = ?").get(key) as MetaRow | undefined
+  return typeof row?.value === "string" ? row.value : null
+}
+
+function setMeta(db: DatabaseSync, key: string, value: string) {
+  db.prepare(`
+    INSERT INTO app_meta (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value)
+}
+
+function applicationCount(db: DatabaseSync): number {
+  const row = db.prepare("SELECT COUNT(*) AS count FROM applications").get() as CountRow | undefined
+  return Number(row?.count ?? 0)
+}
+
 function parseStore(raw: string): StoredApplicationFile | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredApplicationFile> | JobApplication[]
@@ -83,45 +152,123 @@ function parseStore(raw: string): StoredApplicationFile | null {
   return null
 }
 
-async function readStore(): Promise<StoredApplicationFile> {
-  await ensureDataDir()
-  let raw: string
-  try {
-    raw = await readFile(APPLICATION_STORE_PATH, "utf-8")
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined
-    if (code === "ENOENT") return { version: 1, applications: [] }
-    throw error
+async function readLegacyStore(): Promise<StoredApplicationFile | null> {
+  let sawLegacyFile = false
+  for (const filename of [LEGACY_APPLICATION_STORE_PATH, `${LEGACY_APPLICATION_STORE_PATH}.bak`]) {
+    let raw: string
+    try {
+      raw = await readFile(filename, "utf-8")
+      sawLegacyFile = true
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined
+      if (code === "ENOENT") continue
+      throw error
+    }
+
+    const parsed = parseStore(raw)
+    if (parsed) return parsed
   }
 
-  const parsed = parseStore(raw)
-  if (parsed) return parsed
-
-  // 文件损坏时，先尝试从最近一次的备份恢复，避免整张列表读不出来
-  try {
-    const backup = await readFile(`${APPLICATION_STORE_PATH}.bak`, "utf-8")
-    const recovered = parseStore(backup)
-    if (recovered) return recovered
-  } catch {
-    /* 没有可用备份则继续 */
+  if (sawLegacyFile) {
+    throw new Error("旧版投递 JSON 已损坏，无法迁移到 SQLite")
   }
-  throw new Error("投递记录文件已损坏，且无可用备份")
+  return null
 }
 
-async function writeStore(store: StoredApplicationFile) {
-  await ensureDataDir()
-  const payload = `${JSON.stringify(store, null, 2)}\n`
-  // 唯一临时文件名，避免并发写入相互覆盖产生半截内容
-  const tmp = `${APPLICATION_STORE_PATH}.${process.pid}.${randomUUID()}.tmp`
-  // 写入前留存上一份内容作为备份，便于损坏时恢复
-  try {
-    const previous = await readFile(APPLICATION_STORE_PATH, "utf-8")
-    if (parseStore(previous)) await writeFile(`${APPLICATION_STORE_PATH}.bak`, previous, "utf-8")
-  } catch {
-    /* 首次写入或读失败时跳过备份 */
+function safeIso(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback
+}
+
+function normalizeApplication(entry: JobApplication): JobApplication {
+  const now = new Date().toISOString()
+  const status = normalizeStatus(entry.status)
+  return {
+    ...entry,
+    id: cleanString(entry.id) || randomUUID(),
+    company: cleanString(entry.company) || "未命名公司",
+    position: cleanString(entry.position) || "未填写岗位",
+    status,
+    priority: (typeof entry.priority === "string" && ["high", "normal", "low"].includes(entry.priority) ? entry.priority : "normal") as JobApplication["priority"],
+    events: normalizeEvents(entry.events),
+    createdAt: safeIso(entry.createdAt, now),
+    updatedAt: safeIso(entry.updatedAt, safeIso(entry.createdAt, now)),
   }
-  await writeFile(tmp, payload, "utf-8")
-  await rename(tmp, APPLICATION_STORE_PATH)
+}
+
+async function migrateLegacyJsonIfNeeded(db: DatabaseSync) {
+  if (getMeta(db, LEGACY_MIGRATION_KEY) === "1") return
+  if (applicationCount(db) > 0) {
+    setMeta(db, LEGACY_MIGRATION_KEY, "1")
+    return
+  }
+
+  const legacy = await readLegacyStore()
+  if (!legacy || legacy.applications.length === 0) {
+    setMeta(db, LEGACY_MIGRATION_KEY, "1")
+    return
+  }
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO applications (
+      id,
+      owner,
+      created_at,
+      updated_at,
+      status,
+      company,
+      position,
+      application_json
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  db.exec("BEGIN IMMEDIATE")
+  try {
+    legacy.applications.forEach((entry) => {
+      const app = normalizeApplication(entry)
+      insert.run(
+        app.id,
+        "admin",
+        app.createdAt,
+        app.updatedAt,
+        app.status,
+        app.company,
+        app.position,
+        JSON.stringify(app),
+      )
+    })
+    setMeta(db, LEGACY_MIGRATION_KEY, "1")
+    db.exec("COMMIT")
+  } catch (error) {
+    db.exec("ROLLBACK")
+    throw error
+  }
+}
+
+async function initDatabase(): Promise<DatabaseSync> {
+  await ensureDataDir()
+  const db = new DatabaseSync(SQLITE_STORE_PATH, { timeout: 5000 })
+  try {
+    configureDatabase(db)
+    ensureSchema(db)
+    await migrateLegacyJsonIfNeeded(db)
+    dbInstance = db
+    return db
+  } catch (error) {
+    db.close()
+    dbInit = null
+    throw error
+  }
+}
+
+async function getDb(): Promise<DatabaseSync> {
+  if (dbInstance) return dbInstance
+  dbInit ??= initDatabase()
+  return dbInit
+}
+
+function rowToApplication(row: ApplicationRow): JobApplication {
+  return JSON.parse(row.application_json) as JobApplication
 }
 
 function buildApplication(
@@ -158,20 +305,66 @@ function buildApplication(
   }
 }
 
+function upsertApplicationRow(db: DatabaseSync, owner: string, entry: JobApplication) {
+  db.prepare(`
+    INSERT INTO applications (
+      id,
+      owner,
+      created_at,
+      updated_at,
+      status,
+      company,
+      position,
+      application_json
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at,
+      status = excluded.status,
+      company = excluded.company,
+      position = excluded.position,
+      application_json = excluded.application_json
+      WHERE owner = excluded.owner
+  `).run(
+    entry.id,
+    owner,
+    entry.createdAt,
+    entry.updatedAt,
+    entry.status,
+    entry.company,
+    entry.position,
+    JSON.stringify(entry),
+  )
+}
+
 export async function listApplications(): Promise<JobApplication[]> {
-  const store = await readStore()
-  return clone(store.applications)
+  const owner = await getCurrentUsername()
+  const db = await getDb()
+  const rows = db.prepare(`
+    SELECT id, owner, updated_at, application_json
+    FROM applications
+    WHERE owner = ?
+    ORDER BY updated_at DESC
+  `).all(owner) as ApplicationRow[]
+  return clone(rows.map(rowToApplication))
 }
 
 export async function getApplication(id: string): Promise<JobApplication | null> {
-  const store = await readStore()
-  const entry = store.applications.find((item) => item.id === id)
-  return entry ? clone(entry) : null
+  const owner = await getCurrentUsername()
+  const db = await getDb()
+  const row = db.prepare(`
+    SELECT id, owner, updated_at, application_json
+    FROM applications
+    WHERE id = ? AND owner = ?
+  `).get(id, owner) as ApplicationRow | undefined
+  return row ? clone(rowToApplication(row)) : null
 }
 
 export function createApplication(input: ApplicationInput): Promise<JobApplication> {
   return withLock(async () => {
-    const store = await readStore()
+    const db = await getDb()
+    const owner = await getCurrentUsername()
     const now = new Date().toISOString()
     const status = normalizeStatus(input.status)
     const initialEvents = input.events
@@ -186,23 +379,21 @@ export function createApplication(input: ApplicationInput): Promise<JobApplicati
           },
         ]
     const entry = buildApplication(input, { id: randomUUID(), createdAt: now, events: initialEvents }, now)
-    store.applications.unshift(entry)
-    await writeStore(store)
+    upsertApplicationRow(db, owner, entry)
     return clone(entry)
   })
 }
 
 export function updateApplication(id: string, input: ApplicationInput): Promise<JobApplication> {
   return withLock(async () => {
-    const store = await readStore()
-    const index = store.applications.findIndex((item) => item.id === id)
-    if (index < 0) throw new Error("未找到对应的投递记录")
+    const owner = await getCurrentUsername()
+    const db = await getDb()
+    const previous = await getApplication(id)
+    if (!previous) throw new Error("未找到对应的投递记录")
     const now = new Date().toISOString()
-    const previous = store.applications[index]
 
     let events = previous.events
     const nextStatus = normalizeStatus(input.status ?? previous.status)
-    // 阶段发生变化时自动写入一条时间线事件
     if (!input.events && nextStatus !== previous.status) {
       events = [
         ...previous.events,
@@ -223,20 +414,18 @@ export function updateApplication(id: string, input: ApplicationInput): Promise<
       events: input.events ? normalizeEvents(input.events) : events,
     }
     const updated = buildApplication(merged, { id: previous.id, createdAt: previous.createdAt, events: merged.events ?? events }, now)
-    store.applications[index] = updated
-    await writeStore(store)
+    upsertApplicationRow(db, owner, updated)
     return clone(updated)
   })
 }
 
 export function deleteApplicationIds(ids: string[]): Promise<number> {
   return withLock(async () => {
-    const store = await readStore()
-    const idSet = new Set(ids)
-    const before = store.applications.length
-    store.applications = store.applications.filter((item) => !idSet.has(item.id))
-    const deleted = before - store.applications.length
-    if (deleted > 0) await writeStore(store)
-    return deleted
+    if (ids.length === 0) return 0
+    const db = await getDb()
+    const owner = await getCurrentUsername()
+    const placeholders = ids.map(() => "?").join(", ")
+    const result = db.prepare(`DELETE FROM applications WHERE owner = ? AND id IN (${placeholders})`).run(owner, ...ids)
+    return Number(result.changes)
   })
 }

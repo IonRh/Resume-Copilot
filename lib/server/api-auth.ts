@@ -1,22 +1,17 @@
-import { createHash } from "node:crypto"
 import { cookies } from "next/headers"
 
-const AUTH_COOKIE = "site_auth"
+import { AUTH_COOKIE, verifyAuthToken } from "@/lib/server/auth-users"
 
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex")
+export async function getCurrentUsername(): Promise<string> {
+  const cookieStore = await cookies()
+  const token = cookieStore.get(AUTH_COOKIE)?.value || ""
+  const username = await verifyAuthToken(token)
+  if (!username) throw new Error("UNAUTHORIZED")
+  return username
 }
 
-export async function assertResumeApiAuthorized() {
-  const password = (process.env.SITE_PASSWORD ?? "").trim()
-  if (!password) return
-
-  const cookieStore = await cookies()
-  const actual = cookieStore.get(AUTH_COOKIE)?.value || ""
-  const expected = hashPassword(password)
-  if (actual !== expected) {
-    throw new Error("UNAUTHORIZED")
-  }
+export async function assertResumeApiAuthorized(): Promise<string> {
+  return getCurrentUsername()
 }
 
 export function unauthorizedResponse() {

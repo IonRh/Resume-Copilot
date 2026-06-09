@@ -633,7 +633,7 @@ export default function UserCenter() {
               onClick={tool.action}
               className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
             >
-              <span className="brand-gradient-bg grid h-10 w-10 shrink-0 place-items-center rounded-xl">
+              <span className="brand-icon-bg grid h-10 w-10 shrink-0 place-items-center rounded-xl">
                 <Icon icon={tool.icon} className="h-5 w-5" />
               </span>
               <span className="min-w-0">

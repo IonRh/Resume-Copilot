@@ -1,5 +1,6 @@
 import { configureChromiumRuntimeEnv } from "@/lib/chromium"
 import type { CoverLetterPrintPayload } from "@/lib/cover-letter-pdf"
+import { getAuthCookieValue } from "@/lib/server/pdf-auth-cookie"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -119,10 +120,8 @@ export async function POST(
     let pdf: Buffer | Uint8Array = Buffer.alloc(0)
 
     try {
-      const pwd = (process.env.SITE_PASSWORD ?? "").trim()
-      if (pwd) {
-        const { createHash } = await import("node:crypto")
-        const cookieValue = createHash("sha256").update(pwd).digest("hex")
+      const cookieValue = getAuthCookieValue(req)
+      if (cookieValue) {
         await page.setCookie({
           name: "site_auth",
           value: cookieValue,

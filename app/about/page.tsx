@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Icon } from "@iconify/react"
 import AboutAiConfigForm from "@/components/about-ai-config-form"
+import LogoutButton from "@/components/logout-button"
 import { Button } from "@/components/ui/button"
 import { loadAiProviderConfig, toPublicAiProviderConfig } from "@/lib/server/ai-config"
 
@@ -59,12 +60,15 @@ export default async function AboutPage() {
             </div>
             <h1 className="mt-3 text-2xl font-semibold">关于简历工作区</h1>
           </div>
-          <Button variant="outline" asChild className="gap-2">
-            <Link href="/">
-              <Icon icon="mdi:arrow-left" className="h-4 w-4" />
-              返回
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <LogoutButton />
+            <Button variant="outline" asChild className="gap-2">
+              <Link href="/">
+                <Icon icon="mdi:arrow-left" className="h-4 w-4" />
+                返回
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-4">

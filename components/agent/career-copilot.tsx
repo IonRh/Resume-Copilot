@@ -342,7 +342,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
         <button
           type="button"
           onClick={handleOpen}
-          className="brand-gradient-bg fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full border-0 shadow-lg transition-transform hover:-translate-y-0.5 hover:shadow-xl"
+          className="brand-icon-bg fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full border-0 transition-transform hover:-translate-y-0.5 hover:brightness-105"
           title="求职管家"
           aria-label="打开求职管家"
         >
@@ -354,7 +354,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
         <div className="fixed inset-x-3 bottom-3 z-50 flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[400px] h-[72vh] max-h-[640px]">
           {/* 头部 */}
           <div className="flex items-center gap-2.5 border-b border-border p-3">
-            <span className="brand-gradient-bg grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+            <span className="brand-icon-bg grid h-9 w-9 shrink-0 place-items-center rounded-xl">
               <Icon icon="mdi:robot-happy-outline" className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
@@ -472,7 +472,7 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
             <>
               <DialogHeader>
                 <div className="mb-1 flex items-center gap-2">
-                  <span className="brand-gradient-bg grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                  <span className="brand-icon-bg grid h-9 w-9 shrink-0 place-items-center rounded-xl">
                     <Icon
                       icon={pendingAction ? COPILOT_ACTION_META[pendingAction.kind].icon : "mdi:robot-happy-outline"}
                       className="h-5 w-5"

@@ -703,7 +703,7 @@ export default function ApplicationTracker() {
         <button
           onClick={openInsights}
           title="AI 投递复盘"
-          className="brand-gradient-bg fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-sm font-medium shadow-lg shadow-primary/25 transition-transform hover:-translate-y-0.5 hover:shadow-xl"
+          className="brand-pill-bg fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border-0 px-4 py-3 text-sm font-medium transition-transform hover:-translate-y-0.5"
         >
           <Icon icon="mdi:chart-timeline-variant" className="h-5 w-5" />
           AI 复盘

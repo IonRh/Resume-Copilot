@@ -3,12 +3,14 @@ import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import type { CoverLetterRecord } from "@/types/cover-letter"
+import { getCurrentUsername } from "@/lib/server/api-auth"
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const SQLITE_STORE_PATH = path.join(DATA_DIR, "cover-letters.sqlite")
 
 type SessionRow = {
   id: string
+  owner: string
   updated_at: string
   record_json: string
 }
@@ -42,10 +44,19 @@ function ensureSchema(db: DatabaseSync) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cover_letters (
       id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL DEFAULT 'admin',
       updated_at TEXT NOT NULL,
       record_json TEXT NOT NULL
     );
 
+  `)
+  try {
+    db.exec("ALTER TABLE cover_letters ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'")
+  } catch {
+    /* column already exists */
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cover_letters_owner_updated_at ON cover_letters(owner, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_cover_letters_updated_at ON cover_letters(updated_at DESC);
   `)
 }
@@ -76,37 +87,42 @@ function clone<T>(value: T): T {
 }
 
 export async function listCoverLetters(): Promise<CoverLetterRecord[]> {
+  const owner = await getCurrentUsername()
   const db = await getDb()
   const rows = db.prepare(`
     SELECT id, updated_at, record_json
     FROM cover_letters
+    WHERE owner = ?
     ORDER BY updated_at DESC
-  `).all() as SessionRow[]
+  `).all(owner) as SessionRow[]
   return rows.map((row) => JSON.parse(row.record_json) as CoverLetterRecord)
 }
 
 export async function getCoverLetter(id: string): Promise<CoverLetterRecord | null> {
+  const owner = await getCurrentUsername()
   const db = await getDb()
   const row = db.prepare(`
     SELECT id, updated_at, record_json
     FROM cover_letters
-    WHERE id = ?
-  `).get(id) as SessionRow | undefined
+    WHERE id = ? AND owner = ?
+  `).get(id, owner) as SessionRow | undefined
   return row ? (JSON.parse(row.record_json) as CoverLetterRecord) : null
 }
 
 export function upsertCoverLetter(record: CoverLetterRecord): Promise<CoverLetterRecord> {
   return withLock(async () => {
     const db = await getDb()
+    const owner = await getCurrentUsername()
     const updatedAt = record.updatedAt || new Date().toISOString()
     const next = { ...record, updatedAt }
     db.prepare(`
-      INSERT INTO cover_letters (id, updated_at, record_json)
-      VALUES (?, ?, ?)
+      INSERT INTO cover_letters (id, owner, updated_at, record_json)
+      VALUES (?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         updated_at = excluded.updated_at,
         record_json = excluded.record_json
-    `).run(next.id, updatedAt, JSON.stringify(next))
+        WHERE owner = excluded.owner
+    `).run(next.id, owner, updatedAt, JSON.stringify(next))
     return clone(next)
   })
 }
@@ -114,7 +130,8 @@ export function upsertCoverLetter(record: CoverLetterRecord): Promise<CoverLette
 export function deleteCoverLetter(id: string): Promise<boolean> {
   return withLock(async () => {
     const db = await getDb()
-    const result = db.prepare("DELETE FROM cover_letters WHERE id = ?").run(id)
+    const owner = await getCurrentUsername()
+    const result = db.prepare("DELETE FROM cover_letters WHERE id = ? AND owner = ?").run(id, owner)
     return Number(result.changes) > 0
   })
 }

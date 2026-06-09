@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 import type { ResumeData, StoredResume } from "@/types/resume"
 import { sanitizeResumeDisplayName } from "@/lib/resume-display"
 import { normalizeResumeData as normalizeResumeCoreData, validateResumeData } from "@/lib/resume-core"
+import { getCurrentUsername } from "@/lib/server/api-auth"
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const LEGACY_RESUME_STORE_PATH = path.join(DATA_DIR, "resumes.json")
@@ -20,6 +21,7 @@ type StoredResumeFile = {
 
 type ResumeRow = {
   id: string
+  owner: string
   display_name: string | null
   created_at: string
   updated_at: string
@@ -120,6 +122,7 @@ function ensureSchema(db: DatabaseSync) {
 
     CREATE TABLE IF NOT EXISTS resumes (
       id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL DEFAULT 'admin',
       display_name TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -127,6 +130,15 @@ function ensureSchema(db: DatabaseSync) {
       resume_data TEXT NOT NULL
     );
 
+  `)
+  try {
+    db.exec("ALTER TABLE resumes ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'")
+  } catch {
+    /* column already exists */
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_resumes_owner_position ON resumes(owner, position, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_resumes_owner_updated_at ON resumes(owner, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_resumes_position ON resumes(position, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_resumes_updated_at ON resumes(updated_at DESC);
   `)
@@ -165,7 +177,7 @@ function safeIso(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback
 }
 
-function legacyEntryToRow(entry: unknown, position: number): (ResumeRow & { position: number }) | null {
+function legacyEntryToRow(entry: unknown, position: number): (Omit<ResumeRow, "owner"> & { position: number }) | null {
   if (!entry || typeof entry !== "object") return null
 
   const candidate = entry as Partial<StoredResume>
@@ -204,13 +216,14 @@ async function migrateLegacyJsonIfNeeded(db: DatabaseSync) {
   const insert = db.prepare(`
     INSERT OR IGNORE INTO resumes (
       id,
+      owner,
       display_name,
       created_at,
       updated_at,
       position,
       resume_data
     )
-    VALUES (?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `)
 
   db.exec("BEGIN IMMEDIATE")
@@ -218,7 +231,7 @@ async function migrateLegacyJsonIfNeeded(db: DatabaseSync) {
     legacy.resumes.forEach((entry, index) => {
       const row = legacyEntryToRow(entry, index)
       if (!row) return
-      insert.run(row.id, row.display_name, row.created_at, row.updated_at, row.position, row.resume_data)
+      insert.run(row.id, "admin", row.display_name, row.created_at, row.updated_at, row.position, row.resume_data)
     })
     setMeta(db, LEGACY_MIGRATION_KEY, "1")
     db.exec("COMMIT")
@@ -255,28 +268,32 @@ function newEntryPosition(): number {
 }
 
 export async function listResumes(): Promise<StoredResume[]> {
+  const owner = await getCurrentUsername()
   const db = await getDb()
   const rows = db.prepare(`
     SELECT id, display_name, created_at, updated_at, resume_data
     FROM resumes
+    WHERE owner = ?
     ORDER BY position ASC, created_at DESC
-  `).all() as ResumeRow[]
+  `).all(owner) as ResumeRow[]
   return rows.map(rowToStoredResume)
 }
 
 export async function getResume(id: string): Promise<StoredResume | null> {
+  const owner = await getCurrentUsername()
   const db = await getDb()
   const row = db.prepare(`
     SELECT id, display_name, created_at, updated_at, resume_data
     FROM resumes
-    WHERE id = ?
-  `).get(id) as ResumeRow | undefined
+    WHERE id = ? AND owner = ?
+  `).get(id, owner) as ResumeRow | undefined
   return row ? rowToStoredResume(row) : null
 }
 
 export function createResume(data: ResumeData, displayName?: string): Promise<StoredResume> {
   return withLock(async () => {
     const db = await getDb()
+    const owner = await getCurrentUsername()
     const now = new Date().toISOString()
     const resumeData = normalizeResumeData(data, now, now)
     const entry = normalizeStoredResume({
@@ -290,15 +307,17 @@ export function createResume(data: ResumeData, displayName?: string): Promise<St
     db.prepare(`
       INSERT INTO resumes (
         id,
+        owner,
         display_name,
         created_at,
         updated_at,
         position,
         resume_data
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       entry.id,
+      owner,
       entry.displayName || "未命名",
       entry.createdAt,
       entry.updatedAt,
@@ -336,8 +355,8 @@ export function updateResume(id: string, data: ResumeData, displayName?: string)
       SET display_name = ?,
           updated_at = ?,
           resume_data = ?
-      WHERE id = ?
-    `).run(updated.displayName || "未命名", updated.updatedAt, JSON.stringify(updated.resumeData), id)
+      WHERE id = ? AND owner = ?
+    `).run(updated.displayName || "未命名", updated.updatedAt, JSON.stringify(updated.resumeData), id, await getCurrentUsername())
 
     return updated
   })
@@ -367,8 +386,8 @@ export function updateResumeDisplayName(id: string, displayName: string): Promis
       UPDATE resumes
       SET display_name = ?,
           updated_at = ?
-      WHERE id = ?
-    `).run(updated.displayName || "未命名", updated.updatedAt, id)
+      WHERE id = ? AND owner = ?
+    `).run(updated.displayName || "未命名", updated.updatedAt, id, await getCurrentUsername())
 
     return updated
   })
@@ -379,8 +398,9 @@ export function deleteResumeIds(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0
 
     const db = await getDb()
+    const owner = await getCurrentUsername()
     const placeholders = ids.map(() => "?").join(", ")
-    const result = db.prepare(`DELETE FROM resumes WHERE id IN (${placeholders})`).run(...ids)
+    const result = db.prepare(`DELETE FROM resumes WHERE owner = ? AND id IN (${placeholders})`).run(owner, ...ids)
     return Number(result.changes)
   })
 }

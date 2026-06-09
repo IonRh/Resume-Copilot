@@ -3,6 +3,7 @@
 import type { ResumeData } from "@/types/resume";
 import { configureChromiumRuntimeEnv } from "@/lib/chromium";
 import { ensureResumeAvatarOnPage, prepareResumeDataForPdf, resumeDataForSessionStorage, waitForResumeImages } from "@/lib/resume-core/pdf";
+import { getAuthCookieValue } from "@/lib/server/pdf-auth-cookie";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,12 +119,8 @@ export async function POST(
     let pdf: Buffer | Uint8Array = Buffer.alloc(0);
 
     try {
-      // If SITE_PASSWORD is set, set the same auth cookie as middleware expects
-      const pwd = (process.env.SITE_PASSWORD ?? "").trim();
-      if (pwd) {
-        const { createHash } = await import("node:crypto");
-        const cookieValue = createHash("sha256").update(pwd).digest("hex");
-        // Set cookie scoped to current origin so middleware will pass
+      const cookieValue = getAuthCookieValue(req);
+      if (cookieValue) {
         await page.setCookie({
           name: "site_auth",
           value: cookieValue,
