@@ -8,6 +8,8 @@
  *  - 展示（渲染分析卡片）：present_*
  */
 
+import { RESUME_TARGET_ID_DESC } from "@/lib/resume-core/id"
+
 export interface ToolSchema {
   type: "function"
   function: {
@@ -156,7 +158,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          elementId: { type: "string", description: "目标元素 id（形如 element#xxx 中的 xxx）" },
+          elementId: { type: "string", description: RESUME_TARGET_ID_DESC },
           text: { type: "string", description: "新的纯文本内容；可用 \\n 换行，行首 - 表示项目符号" },
           bold: { type: "boolean", description: "可选：覆盖是否加粗；省略则继承原元素" },
           fontSize: { type: "string", description: "可选：覆盖字号，如 12pt；省略则继承原元素" },
@@ -190,7 +192,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          moduleId: { type: "string" },
+          moduleId: { type: "string", description: RESUME_TARGET_ID_DESC },
           title: { type: "string" },
         },
         required: ["moduleId"],
@@ -206,7 +208,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         type: "object",
         properties: {
           title: { type: "string" },
-          afterModuleId: { type: "string", description: "插入到该模块之后；省略则追加到末尾" },
+          afterModuleId: { type: "string", description: `插入到该模块之后；省略则追加到末尾。${RESUME_TARGET_ID_DESC}` },
           rows: {
             type: "array",
             items: rowSchema,
@@ -223,7 +225,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       description: "删除一个模块。",
       parameters: {
         type: "object",
-        properties: { moduleId: { type: "string" } },
+        properties: { moduleId: { type: "string", description: RESUME_TARGET_ID_DESC } },
         required: ["moduleId"],
       },
     },
@@ -236,7 +238,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          orderedModuleIds: { type: "array", items: { type: "string" } },
+          orderedModuleIds: {
+            type: "array",
+            items: { type: "string", description: RESUME_TARGET_ID_DESC },
+          },
         },
         required: ["orderedModuleIds"],
       },
@@ -250,13 +255,13 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          moduleId: { type: "string" },
+          moduleId: { type: "string", description: RESUME_TARGET_ID_DESC },
           type: { type: "string", enum: ["rich", "tags"] },
           columns: { type: "integer", enum: [1, 2, 3, 4], description: "富文本行的列数" },
           texts: { type: "array", items: { type: "string" }, description: "各列文本" },
           formats: columnFormatsSchema,
           tags: { type: "array", items: { type: "string" }, description: "标签行内容" },
-          afterRowId: { type: "string", description: "插入到该行之后；省略则追加" },
+          afterRowId: { type: "string", description: `插入到该行之后；省略则追加。${RESUME_TARGET_ID_DESC}` },
         },
         required: ["moduleId"],
       },
@@ -271,8 +276,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          moduleId: { type: "string" },
-          afterRowId: { type: "string", description: "整体插入到该行之后；省略则追加到模块末尾" },
+          moduleId: { type: "string", description: RESUME_TARGET_ID_DESC },
+          afterRowId: { type: "string", description: `整体插入到该行之后；省略则追加到模块末尾。${RESUME_TARGET_ID_DESC}` },
           rows: {
             type: "array",
             minItems: 1,
@@ -292,8 +297,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          moduleId: { type: "string" },
-          rowId: { type: "string" },
+          moduleId: { type: "string", description: RESUME_TARGET_ID_DESC },
+          rowId: { type: "string", description: RESUME_TARGET_ID_DESC },
         },
         required: ["moduleId", "rowId"],
       },
@@ -307,7 +312,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: "object",
         properties: {
-          rowId: { type: "string" },
+          rowId: { type: "string", description: RESUME_TARGET_ID_DESC },
           tags: { type: "array", items: { type: "string" } },
         },
         required: ["rowId", "tags"],
@@ -464,8 +469,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
                 targetIds: {
                   type: "array",
                   items: { type: "string" },
-                  description:
-                    "该建议涉及的简历元素/行/模块纯 id。必须使用 get_resume 里 element#、row#、module# 后面的 id，不要带 element#/row#/module# 前缀。",
+                  description: RESUME_TARGET_ID_DESC,
                 },
               },
               required: ["section", "advice"],

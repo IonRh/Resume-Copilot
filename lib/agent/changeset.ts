@@ -6,6 +6,8 @@ export {
   findRow,
   genId,
   getDocTextAlign,
+  normalizeResumeTargetId,
+  normalizeResumeTargetIds,
   reindexOrder,
   textToDoc,
   withUpdatedElement,

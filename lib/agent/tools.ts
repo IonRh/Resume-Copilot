@@ -12,6 +12,8 @@ import {
   findModule,
   findRow,
   genId,
+  normalizeResumeTargetId,
+  normalizeResumeTargetIds,
   getDocTextAlign,
   reindexOrder,
   withUpdatedElement,
@@ -56,13 +58,6 @@ function parseInterviewDimensions(raw: unknown): InterviewDimensionScores | unde
   }
   return { substance, structure, relevance, credibility, differentiation }
 }
-const targetIdPattern = /^(?:element|row|module)#([^\s,，)）;；]+)/i
-const normalizeTargetId = (id: string): string => {
-  const value = id.trim()
-  const prefixed = value.match(targetIdPattern)
-  return prefixed?.[1] || value.replace(/^(?:element|row|module)#/i, "")
-}
-
 /** 为 JD 建议生成稳定 id（基于 section + advice），与 store 中的算法一致，便于跨版本跟踪状态 */
 const suggestionKey = (section: string, advice: string): string => {
   const raw = `${section}::${advice}`
@@ -179,7 +174,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
 
     /* ---------- 文本 ---------- */
     case "update_element_text": {
-      const elementId = str(args.elementId)
+      const elementId = normalizeResumeTargetId(str(args.elementId))
       const loc = findElement(data, elementId)
       if (!loc) return { ok: false, message: `未找到元素 ${elementId}` }
       const before = docToText(loc.element.content)
@@ -234,7 +229,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
 
     /* ---------- 模块 ---------- */
     case "update_module": {
-      const moduleId = str(args.moduleId)
+      const moduleId = normalizeResumeTargetId(str(args.moduleId))
       const resumeModule = findModule(data, moduleId)
       if (!resumeModule) return { ok: false, message: `未找到模块 ${moduleId}` }
       const title = args.title !== undefined ? str(args.title) : undefined
@@ -254,7 +249,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
 
     case "add_module": {
       const title = str(args.title, "新模块")
-      const afterModuleId = str(args.afterModuleId)
+      const afterModuleId = normalizeResumeTargetId(str(args.afterModuleId))
       const rows = Array.isArray(args.rows) ? args.rows.map((row) => rowSpec((row || {}) as Args)) : undefined
       const change: ChangeSet = {
         id: genId("chg"),
@@ -276,7 +271,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     }
 
     case "remove_module": {
-      const moduleId = str(args.moduleId)
+      const moduleId = normalizeResumeTargetId(str(args.moduleId))
       const resumeModule = findModule(data, moduleId)
       if (!resumeModule) return { ok: false, message: `未找到模块 ${moduleId}` }
       const change: ChangeSet = {
@@ -293,7 +288,9 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     }
 
     case "reorder_modules": {
-      const ordered = Array.isArray(args.orderedModuleIds) ? args.orderedModuleIds.map(String) : []
+      const ordered = Array.isArray(args.orderedModuleIds)
+        ? normalizeResumeTargetIds(args.orderedModuleIds.map(String))
+        : []
       if (ordered.length === 0) return { ok: false, message: "未提供模块顺序" }
       const byId = new Map(data.modules.map((m) => [m.id, m]))
       const reordered: ResumeModule[] = []
@@ -336,10 +333,10 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
 
     /* ---------- 行 ---------- */
     case "add_row": {
-      const moduleId = str(args.moduleId)
+      const moduleId = normalizeResumeTargetId(str(args.moduleId))
       const resumeModule = findModule(data, moduleId)
       if (!resumeModule) return { ok: false, message: `未找到模块 ${moduleId}` }
-      const afterRowId = str(args.afterRowId)
+      const afterRowId = normalizeResumeTargetId(str(args.afterRowId))
       const spec = rowSpec(args)
       const change: ChangeSet = {
         id: genId("chg"),
@@ -363,10 +360,10 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     }
 
     case "add_rows": {
-      const moduleId = str(args.moduleId)
+      const moduleId = normalizeResumeTargetId(str(args.moduleId))
       const resumeModule = findModule(data, moduleId)
       if (!resumeModule) return { ok: false, message: `未找到模块 ${moduleId}` }
-      const afterRowId = str(args.afterRowId)
+      const afterRowId = normalizeResumeTargetId(str(args.afterRowId))
       const specs = Array.isArray(args.rows) ? args.rows.map((row) => rowSpec((row || {}) as Args)) : []
       if (!specs.length) return { ok: false, message: "未提供要新增的行" }
       const change: ChangeSet = {
@@ -395,8 +392,8 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     }
 
     case "remove_row": {
-      const moduleId = str(args.moduleId)
-      const rowId = str(args.rowId)
+      const moduleId = normalizeResumeTargetId(str(args.moduleId))
+      const rowId = normalizeResumeTargetId(str(args.rowId))
       const resumeModule = findModule(data, moduleId)
       if (!resumeModule) return { ok: false, message: `未找到模块 ${moduleId}` }
       const row = resumeModule.rows.find((r) => r.id === rowId)
@@ -417,7 +414,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
     }
 
     case "set_row_tags": {
-      const rowId = str(args.rowId)
+      const rowId = normalizeResumeTargetId(str(args.rowId))
       const found = findRow(data, rowId)
       if (!found) return { ok: false, message: `未找到行 ${rowId}` }
       const tags = Array.isArray(args.tags) ? args.tags.map(String) : []
@@ -589,7 +586,7 @@ export async function executeTool(name: string, args: Args, data: ResumeData): P
             section,
             advice,
             prompt: str(o.prompt) || undefined,
-            targetIds: Array.isArray(o.targetIds) ? o.targetIds.map(String).map(normalizeTargetId).filter(Boolean) : undefined,
+            targetIds: Array.isArray(o.targetIds) ? normalizeResumeTargetIds(o.targetIds.map(String)) : undefined,
             status: "pending" as const,
           }
         }),

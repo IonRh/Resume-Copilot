@@ -12,6 +12,7 @@ import {
   clampPersonalInfoItemsPerRow,
   ensureDoc,
 } from "./factory"
+import { createElementId, createModuleId, createResumeId, createRowId } from "./id"
 import { reindexOrder } from "./operations"
 
 interface NormalizeOptions {
@@ -47,7 +48,7 @@ function normalizePersonalItem(item: unknown, index: number): PersonalInfoItem {
   const type = value.type === "link" ? "link" : "text"
   return {
     ...(source as Partial<PersonalInfoItem>),
-    id: textValue(source.id, `info-${index}`) || `info-${index}`,
+    id: textValue(source.id) || createResumeId("info"),
     label: textValue(source.label),
     value: {
       content: textValue(value.content),
@@ -86,7 +87,7 @@ function normalizeJobItem(item: unknown, index: number): JobIntentionItem {
     : "custom"
   return {
     ...(source as Partial<JobIntentionItem>),
-    id: textValue(source.id, `jii-${index}`) || `jii-${index}`,
+    id: textValue(source.id) || createResumeId("jii"),
     label: textValue(source.label),
     value: textValue(source.value),
     order: index,
@@ -95,7 +96,7 @@ function normalizeJobItem(item: unknown, index: number): JobIntentionItem {
   }
 }
 
-function normalizeElements(rowId: string, columns: ModuleContentRow["columns"], rawElements: unknown): ModuleContentElement[] {
+function normalizeElements(columns: ModuleContentRow["columns"], rawElements: unknown): ModuleContentElement[] {
   const existing = Array.isArray(rawElements)
     ? [...rawElements].sort((a, b) => columnValue(a) - columnValue(b)).slice(0, columns)
     : []
@@ -103,7 +104,7 @@ function normalizeElements(rowId: string, columns: ModuleContentRow["columns"], 
   for (let index = 0; index < columns; index++) {
     const element = isRecord(existing[index]) ? existing[index] : {}
     elements.push({
-      id: textValue(element.id, `${rowId || "row"}-el-${index}`) || `${rowId || "row"}-el-${index}`,
+      id: textValue(element.id) || createElementId(),
       content: ensureDoc(element.content),
       columnIndex: index,
     })
@@ -113,7 +114,7 @@ function normalizeElements(rowId: string, columns: ModuleContentRow["columns"], 
 
 function normalizeRow(row: unknown, index: number): ModuleContentRow {
   const source = isRecord(row) ? row : {}
-  const id = textValue(source.id, `row-${index}`) || `row-${index}`
+  const id = textValue(source.id) || createRowId()
   if (source.type === "tags") {
     return {
       ...(source as Partial<ModuleContentRow>),
@@ -136,7 +137,7 @@ function normalizeRow(row: unknown, index: number): ModuleContentRow {
   }
   return {
     ...richRow,
-    elements: normalizeElements(id, columns, source.elements),
+    elements: normalizeElements(columns, source.elements),
   }
 }
 
@@ -147,7 +148,7 @@ function normalizeModule(module: unknown, index: number): ResumeModule {
     : []
   return {
     ...(source as Partial<ResumeModule>),
-    id: textValue(source.id, `module-${index}`) || `module-${index}`,
+    id: textValue(source.id) || createModuleId(),
     title: textValue(source.title),
     order: index,
     rows,

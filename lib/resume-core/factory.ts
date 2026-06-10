@@ -7,7 +7,7 @@ import type {
   ResumeData,
   ResumeModule,
 } from "@/types/resume"
-import { createResumeId, genId } from "./id"
+import { createElementId, createModuleId, createResumeId, createRowId, genId } from "./id"
 import {
   type ColumnFormat,
   getFirstTextFormat,
@@ -108,13 +108,13 @@ export function createRichRow(options: {
       bold: explicit?.bold ?? inherited?.bold ?? (index === 0 && options.columns >= 2 ? true : undefined),
     }
     elements.push({
-      id: options.elementIds?.[index] || genId("el"),
+      id: options.elementIds?.[index] || createElementId(),
       content: textToStyledDoc(options.texts?.[index] ?? "", format),
       columnIndex: index,
     })
   }
   return {
-    id: options.id || genId("row"),
+    id: options.id || createRowId(),
     type: "rich",
     columns: options.columns,
     elements,
@@ -126,13 +126,13 @@ export function createEmptyResumeRow(columns: ResumeColumnCount, order: number):
   const elements: ModuleContentElement[] = []
   for (let index = 0; index < columns; index++) {
     elements.push({
-      id: createResumeId("el"),
+      id: createElementId(),
       content: textToDoc(""),
       columnIndex: index,
     })
   }
   return {
-    id: createResumeId("row"),
+    id: createRowId(),
     type: "rich",
     columns,
     elements,
@@ -142,7 +142,7 @@ export function createEmptyResumeRow(columns: ResumeColumnCount, order: number):
 
 export function createTagsRow(order: number, tags: string[] = [], id?: string): ModuleContentRow {
   return {
-    id: id || createResumeId("row"),
+    id: id || createRowId(),
     type: "tags",
     columns: 1,
     elements: [],
@@ -166,7 +166,7 @@ export function createResumeRowFromSpec(
 
 export function createNewModule(order: number): ResumeModule {
   return {
-    id: createResumeId("module"),
+    id: createModuleId(),
     title: "新模块",
     icon: undefined,
     order,
@@ -185,7 +185,7 @@ export function createResumeModuleFromSpec(
     builtRows.push(createResumeRowFromSpec(row, index, builtRows[index - 1]))
   })
   return {
-    id: options.id || genId("mod"),
+    id: options.id || createModuleId(),
     title: title || "新模块",
     icon: options.icon ?? GENERIC_MODULE_ICON,
     order,
@@ -362,16 +362,10 @@ export function createDefaultResumeData(): ResumeData {
       enabled: true,
     },
     modules: [
-      {
-        id: "education-1",
-        title: "教育背景",
-        icon: EDUCATION_ICON,
-        order: 0,
-        rows: [
-          createRichRow({
-            id: "edu-row-1",
-            elementIds: ["edu-elem-1", "edu-elem-2", "edu-elem-3"],
-            order: 0,
+      createResumeModuleFromSpec(
+        "教育背景",
+        [
+          {
             columns: 3,
             texts: ["XX大学", "计算机科学与技术", "2018.09 - 2022.06"],
             formats: [
@@ -379,19 +373,15 @@ export function createDefaultResumeData(): ResumeData {
               { textAlign: "center", bold: false },
               { textAlign: "right", bold: false },
             ],
-          }),
+          },
         ],
-      },
-      {
-        id: "work-1",
-        title: "工作经历",
-        icon: WORK_ICON,
-        order: 1,
-        rows: [
-          createRichRow({
-            id: "work-row-1",
-            elementIds: ["work-elem-1", "work-elem-2", "work-elem-3"],
-            order: 0,
+        0,
+        { icon: EDUCATION_ICON },
+      ),
+      createResumeModuleFromSpec(
+        "工作经历",
+        [
+          {
             columns: 3,
             texts: ["XX科技公司", "前端工程师", "2022.07 - 至今"],
             formats: [
@@ -399,17 +389,16 @@ export function createDefaultResumeData(): ResumeData {
               { textAlign: "center", bold: false },
               { textAlign: "right", bold: false },
             ],
-          }),
-          createRichRow({
-            id: "work-row-2",
-            elementIds: ["work-elem-4"],
-            order: 1,
+          },
+          {
             columns: 1,
             texts: ["负责公司核心产品的前端开发工作，使用 React、TypeScript 等技术栈。"],
             formats: [{ textAlign: "left", bold: false }],
-          }),
+          },
         ],
-      },
+        1,
+        { icon: WORK_ICON },
+      ),
     ],
     avatar: "/default-avatar.jpg",
     createdAt: now,

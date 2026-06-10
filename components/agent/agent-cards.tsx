@@ -20,17 +20,7 @@ import type {
   ToolStep,
 } from "@/lib/agent/types"
 
-const targetIdPattern = /^(?:element|row|module)#([^\s,，)）;；]+)/i
-
-function normalizeTargetId(id: string): string {
-  const value = id.trim()
-  const prefixed = value.match(targetIdPattern)
-  return prefixed?.[1] || value.replace(/^(?:element|row|module)#/i, "")
-}
-
-function normalizeTargetIds(ids: string[]): string[] {
-  return [...new Set(ids.map(normalizeTargetId).filter(Boolean))]
-}
+import { normalizeResumeTargetId, normalizeResumeTargetIds } from "@/lib/resume-core"
 
 function attrValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
@@ -39,7 +29,7 @@ function attrValue(value: string): string {
 function findPreviewTarget(id: string): Element | null {
   if (typeof document === "undefined") return null
   const root = document.querySelector(".rw-preview") || document
-  const value = attrValue(normalizeTargetId(id))
+  const value = attrValue(normalizeResumeTargetId(id))
   const element = root.querySelector(`[data-element-id="${value}"]`)
   if (element) return element
   const row = root.querySelector(`[data-row-id="${value}"]`)
@@ -353,7 +343,7 @@ export function DiscoverCard({ card }: { card: DiscoverCardType }) {
 export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: string) => void }) {
   const ws = useResumeWorkspace()
   const locate = (ids: string[]) => {
-    const normalizedIds = normalizeTargetIds(ids)
+    const normalizedIds = normalizeResumeTargetIds(ids)
     if (!normalizedIds.length) return
     ws.setHighlight([])
     window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
@@ -531,7 +521,7 @@ export function JdMatchPanel({
   const doneSug = activeSuggestions.filter((s) => s.status === "applied").length
 
   const locate = (ids: string[]) => {
-    const normalizedIds = normalizeTargetIds(ids)
+    const normalizedIds = normalizeResumeTargetIds(ids)
     if (!normalizedIds.length) return
     ws.setHighlight([])
     window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
