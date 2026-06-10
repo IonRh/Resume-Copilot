@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useResumeWorkspace, type WorkspaceContextValue } from "@/lib/agent/store"
 import { useAgent } from "@/hooks/use-agent"
+import { useVoiceInput } from "@/hooks/use-voice-input"
+import { useToast } from "@/hooks/use-toast"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
 import type { AgentCard, AgentMode, AgentTurn, ChatContentPart } from "@/lib/agent/types"
 import {
@@ -72,6 +74,8 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
   const { send, retry, stop, rescore, running, rescoring, error } = useAgent(ws)
+  const { toast } = useToast()
+  const voice = useVoiceInput()
   const [input, setInput] = useState("")
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newSessionMode, setNewSessionMode] = useState<AgentMode>("edit")
@@ -219,6 +223,28 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     void send(value).then((sent) => {
       if (sent) onUserTurnComplete?.(value)
     })
+  }
+
+  const handleVoiceToggle = async () => {
+    if (running || voice.transcribing) return
+    if (voice.recording) {
+      const text = await voice.stopRecording()
+      if (!text) {
+        if (voice.error) {
+          toast({ title: "语音识别失败", description: voice.error, variant: "destructive" })
+        }
+        return
+      }
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+      requestAnimationFrame(() => textareaRef.current?.focus())
+      return
+    }
+
+    voice.clearError()
+    const started = await voice.startRecording()
+    if (!started && voice.error) {
+      toast({ title: "无法开始录音", description: voice.error, variant: "destructive" })
+    }
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -459,7 +485,9 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               onKeyDown={onKeyDown}
               placeholder={
                 lockedMode === "interview"
-                  ? "输入你的回答，面试官会继续追问"
+                  ? voice.recording
+                    ? "正在录音，再次点击麦克风结束并转写"
+                    : "输入或语音回答，面试官会继续追问"
                   : lockedMode === "coverLetter"
                     ? "告诉我目标岗位、公司或粘贴 JD"
                   : lockedMode === "build"
@@ -470,21 +498,47 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               className="max-h-32 w-full resize-none bg-transparent text-sm outline-none"
             />
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-muted-foreground">Enter 发送 · Shift+Enter 换行</span>
-              {running ? (
-                <Button size="sm" variant="outline" className="h-7 gap-1 bg-transparent text-xs" onClick={stop}>
-                  <Icon icon="mdi:stop" className="h-3.5 w-3.5" /> 停止
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  className="brand-gradient-bg h-7 gap-1 border-0 text-xs"
-                  disabled={!input.trim()}
-                  onClick={() => submit()}
-                >
-                  <Icon icon="mdi:send" className="h-3.5 w-3.5" /> 发送
-                </Button>
-              )}
+              <span className="text-[11px] text-muted-foreground">
+                {lockedMode === "interview" && voice.supported
+                  ? voice.recording
+                    ? "录音中 · 点击麦克风结束"
+                    : voice.transcribing
+                      ? "正在转写语音…"
+                      : "Enter 发送 · 麦克风语音回答"
+                  : "Enter 发送 · Shift+Enter 换行"}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {lockedMode === "interview" && voice.supported ? (
+                  <Button
+                    size="sm"
+                    variant={voice.recording ? "destructive" : "outline"}
+                    className={`h-7 gap-1 bg-transparent text-xs ${voice.recording ? "animate-pulse" : ""}`}
+                    disabled={running || voice.transcribing}
+                    onClick={() => void handleVoiceToggle()}
+                    title={voice.recording ? "结束录音并转写" : "语音回答"}
+                  >
+                    <Icon
+                      icon={voice.transcribing ? "mdi:loading" : voice.recording ? "mdi:microphone" : "mdi:microphone-outline"}
+                      className={`h-3.5 w-3.5 ${voice.transcribing ? "agent-spin" : ""}`}
+                    />
+                    {voice.transcribing ? "转写中" : voice.recording ? "结束" : "语音"}
+                  </Button>
+                ) : null}
+                {running ? (
+                  <Button size="sm" variant="outline" className="h-7 gap-1 bg-transparent text-xs" onClick={stop}>
+                    <Icon icon="mdi:stop" className="h-3.5 w-3.5" /> 停止
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="brand-gradient-bg h-7 gap-1 border-0 text-xs"
+                    disabled={!input.trim() || voice.transcribing}
+                    onClick={() => submit()}
+                  >
+                    <Icon icon="mdi:send" className="h-3.5 w-3.5" /> 发送
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>
