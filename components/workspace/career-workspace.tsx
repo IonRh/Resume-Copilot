@@ -142,7 +142,8 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
 
 const InterviewAnalysisPanel = forwardRef<AgentPanelHandle, {
   briefing: string
-}>(function InterviewAnalysisPanel({ briefing }, ref) {
+  onRunningChange?: (running: boolean) => void
+}>(function InterviewAnalysisPanel({ briefing, onRunningChange }, ref) {
   const analysisWs = useResumeWorkspace()
   const { setAgentOpen, setJd, setMode } = analysisWs
 
@@ -155,7 +156,15 @@ const InterviewAnalysisPanel = forwardRef<AgentPanelHandle, {
     if (briefing) setJd(briefing)
   }, [briefing, setJd])
 
-  return <AgentPanel ref={ref} lockedMode="interviewAnalysis" hideSessionControls workspace={analysisWs} />
+  return (
+    <AgentPanel
+      ref={ref}
+      lockedMode="interviewAnalysis"
+      hideSessionControls
+      workspace={analysisWs}
+      onRunningChange={onRunningChange}
+    />
+  )
 })
 
 function CareerInner({
@@ -185,6 +194,7 @@ function CareerInner({
   const { toast } = useToast()
   const router = useRouter()
   const [analysisResetId, setAnalysisResetId] = useState(0)
+  const [analysisRunning, setAnalysisRunning] = useState(false)
   const [variantDialogOpen, setVariantDialogOpen] = useState(false)
   const [variantTitle, setVariantTitle] = useState("")
   const [savingVariant, setSavingVariant] = useState(false)
@@ -360,6 +370,8 @@ function CareerInner({
         "",
         "请按「单题评分 / 回答亮点 / 主要问题 / 面试官可能追问 / 可直接复述版本」给出简洁分析。",
       ].join("\n")
+      if (!analysisPanelRef.current) return
+      setAnalysisRunning(true)
       analysisPanelRef.current?.send(prompt, { displayText: "模型查看了你的面试回答，正在分析这一轮表现。" })
     },
     [analysisStorageKey, latestInterviewQuestion, mode],
@@ -368,6 +380,7 @@ function CareerInner({
   const resetInterviewAnalysis = useCallback(() => {
     if (!analysisStorageKey || mode !== "interview") return
     void deleteInterviewAgentStateKeys([analysisStorageKey])
+    setAnalysisRunning(false)
     setAnalysisResetId((id) => id + 1)
   }, [analysisStorageKey, mode])
 
@@ -428,7 +441,11 @@ function CareerInner({
       <div className={`career-body ${analysisStorageKey ? "career-body-interview" : ""}`}>
         {analysisStorageKey ? (
           <ResumeWorkspaceProvider key={analysisResetId} initialData={initialData} storageKey={analysisStorageKey}>
-            <InterviewAnalysisPanel ref={analysisPanelRef} briefing={briefing || ""} />
+            <InterviewAnalysisPanel
+              ref={analysisPanelRef}
+              briefing={briefing || ""}
+              onRunningChange={setAnalysisRunning}
+            />
           </ResumeWorkspaceProvider>
         ) : null}
         <div className="rw-preview">
@@ -445,6 +462,8 @@ function CareerInner({
         </div>
         <AgentPanel
           lockedMode={mode}
+          disabled={mode === "interview" && analysisRunning}
+          disabledReason="上一轮回答仍在分析中，请稍等片刻再继续作答"
           onUserTurnComplete={onInterviewAnswer}
           onNewSession={mode === "interview" ? resetInterviewAnalysis : undefined}
         />

@@ -12,6 +12,11 @@ export interface ReportQuestionItem {
   answer: string
   evaluation: string
   referenceAnswer?: string
+  /** 整理结构标签，如「核心1」「延展1」 */
+  segmentLabel?: string
+  /** core=规划卡片正式题，extension=追问 */
+  segmentKind?: "core" | "extension"
+  coreIndex?: number
 }
 
 export interface ReportRoundSection {

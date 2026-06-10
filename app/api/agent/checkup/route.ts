@@ -8,25 +8,11 @@ import {
 } from "@/lib/agent/checkup"
 import { loadAiProviderConfig } from "@/lib/server/ai-config"
 import { callChatCompletions } from "@/lib/server/chat-completions"
+import { extractJson } from "@/lib/server/extract-json"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
-
-function extractJson(text: string): unknown {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed)
-    if (fenced?.[1]) return JSON.parse(fenced[1])
-    const start = trimmed.indexOf("{")
-    const end = trimmed.lastIndexOf("}")
-    if (start >= 0 && end > start) return JSON.parse(trimmed.slice(start, end + 1))
-    throw new Error("模型没有返回合法 JSON")
-  }
-}
 
 const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v.trim() : fallback)
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined)

@@ -1,7 +1,8 @@
 "use client"
 
 import { INTERVIEW_ROUNDS, type InterviewRoundId } from "@/lib/agent/interview-rounds"
-import type { AgentTurn, AgentCard } from "@/lib/agent/types"
+import type { AgentTurn } from "@/lib/agent/types"
+import { countCandidateReplies, formatAnalysisConversation, formatInterviewerConversation } from "@/lib/interview-conversation"
 import type { InterviewSessionRecord } from "@/types/interview-session"
 import type {
   CampaignReportPick,
@@ -9,11 +10,6 @@ import type {
   FullInterviewReport,
   StoredCampaignReport,
 } from "@/types/interview-report"
-export interface SessionExchange {
-  question: string
-  answer: string
-  analysis?: string
-}
 
 export interface SessionTranscript {
   sessionId: string
@@ -22,7 +18,8 @@ export interface SessionTranscript {
   title: string
   resumeTitle: string
   jobBriefing?: string
-  exchanges: SessionExchange[]
+  interviewerLog: string
+  analysisLog: string
 }
 
 type PersistedAgentState = {
@@ -47,36 +44,6 @@ function collectTurns(state: PersistedAgentState | null, agentSessionId?: string
     ? state.sessions.filter((session) => session.id === agentSessionId)
     : state.sessions
   return sessions.flatMap((session) => session.turns || [])
-}
-
-function extractQuestionsFromTurn(turn: AgentTurn): string[] {
-  const questions: string[] = []
-  for (const card of turn.cards || []) {
-    const typed = card as AgentCard
-    if (typed.type === "interview") {
-      for (const item of typed.questions) {
-        if (item.question?.trim()) questions.push(item.question.trim())
-      }
-    }
-  }
-  if (!questions.length && turn.content?.trim()) {
-    questions.push(turn.content.trim())
-  }
-  return questions
-}
-
-function pairExchanges(questions: string[], answers: string[], analyses: string[]): SessionExchange[] {
-  const size = Math.max(questions.length, answers.length)
-  if (size === 0) return []
-  const exchanges: SessionExchange[] = []
-  for (let i = 0; i < size; i += 1) {
-    exchanges.push({
-      question: questions[i] || `第 ${i + 1} 题`,
-      answer: answers[i] || "（未记录回答）",
-      analysis: analyses[i],
-    })
-  }
-  return exchanges
 }
 
 export interface InterviewAgentSessionOption {
@@ -111,23 +78,8 @@ export async function loadSessionTranscript(record: InterviewSessionRecord, agen
   const interviewerKey = `resume.career.interview.${record.resumeId}.${record.id}.interviewer`
   const analysisKey = `resume.career.interview.${record.resumeId}.${record.id}.analysis`
 
-  const questions: string[] = []
-  const answers: string[] = []
-  const analyses: string[] = []
-
-  for (const turn of collectTurns(await loadAgentStorage(interviewerKey), agentSessionId)) {
-    if (turn.role === "assistant") {
-      questions.push(...extractQuestionsFromTurn(turn))
-    } else if (turn.role === "user" && turn.content?.trim()) {
-      answers.push(turn.content.trim())
-    }
-  }
-
-  for (const turn of collectTurns(await loadAgentStorage(analysisKey), agentSessionId)) {
-    if (turn.role === "assistant" && turn.content?.trim()) {
-      analyses.push(turn.content.trim())
-    }
-  }
+  const interviewerTurns = collectTurns(await loadAgentStorage(interviewerKey), agentSessionId)
+  const analysisTurns = collectTurns(await loadAgentStorage(analysisKey), agentSessionId)
 
   return {
     sessionId: record.id,
@@ -136,7 +88,8 @@ export async function loadSessionTranscript(record: InterviewSessionRecord, agen
     title: record.title,
     resumeTitle: record.resumeTitle,
     jobBriefing: record.jobBriefing,
-    exchanges: pairExchanges(questions, answers, analyses),
+    interviewerLog: formatInterviewerConversation(interviewerTurns),
+    analysisLog: formatAnalysisConversation(analysisTurns),
   }
 }
 
@@ -258,61 +211,4 @@ export async function buildReportInput(
   }
 }
 
-export function parseCampaignReportFromToolArgs(args: Record<string, unknown>, title: string): FullInterviewReport {
-  const competencies = Array.isArray(args.competencies)
-    ? args.competencies.map((item, index) => {
-        const row = (item || {}) as Record<string, unknown>
-        return {
-          key: String(row.key || `c${index}`),
-          label: String(row.label || "能力项"),
-          score: Number(row.score) || 0,
-        }
-      })
-    : []
-
-  const rounds = Array.isArray(args.rounds)
-    ? args.rounds.map((item) => {
-        const row = (item || {}) as Record<string, unknown>
-        const questions = Array.isArray(row.questions)
-          ? row.questions.map((q) => {
-              const question = (q || {}) as Record<string, unknown>
-              return {
-                question: String(question.question || ""),
-                starRating: question.starRating != null ? Number(question.starRating) : undefined,
-                answer: String(question.answer || ""),
-                evaluation: String(question.evaluation || ""),
-                referenceAnswer: question.referenceAnswer ? String(question.referenceAnswer) : undefined,
-              }
-            })
-          : []
-        return {
-          roundId: String(row.roundId || "hr") as InterviewRoundId,
-          roundLabel: String(row.roundLabel || ""),
-          score: Number(row.score) || 0,
-          summary: String(row.summary || ""),
-          questions,
-        }
-      })
-    : []
-
-  const suggestions = Array.isArray(args.suggestions)
-    ? args.suggestions.map((item) => {
-        const row = (item || {}) as Record<string, unknown>
-        return {
-          title: String(row.title || ""),
-          description: String(row.description || ""),
-          resources: Array.isArray(row.resources) ? row.resources.map(String) : undefined,
-        }
-      })
-    : []
-
-  return {
-    title,
-    overallScore: Number(args.overallScore) || 0,
-    overallLabel: String(args.overallLabel || "待评估"),
-    summary: String(args.summary || ""),
-    competencies,
-    rounds,
-    suggestions,
-  }
-}
+export { parseCampaignReportFromToolArgs } from "@/lib/interview-report-parse"

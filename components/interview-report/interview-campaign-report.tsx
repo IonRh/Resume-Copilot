@@ -102,7 +102,7 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
     }
     setGenerating(true)
     try {
-      const report = await generateCampaignReport({ picks, campaignSessions: sessions })
+      const report = await generateCampaignReport({ campaignId, picks })
       const input = sessions[0]
       const entry: StoredCampaignReport = {
         campaignId,

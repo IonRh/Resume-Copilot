@@ -36,18 +36,18 @@ export async function saveRoundHandoff(handoff: InterviewRoundHandoff): Promise<
 }
 
 function formatTranscriptForHandoff(transcript: SessionTranscript): string {
-  if (!transcript.exchanges.length) return "（未读取到完整问答记录）"
-  return transcript.exchanges
-    .map((item, index) => {
-      const parts = [`### 第 ${index + 1} 题`, `问题：${item.question}`, `回答：${item.answer}`]
-      if (item.analysis) parts.push(`旁路分析：${item.analysis}`)
-      return parts.join("\n")
-    })
-    .join("\n\n")
+  if (transcript.interviewerLog === "（无对话记录）") return "（未读取到完整问答记录）"
+  return [
+    "### 原始面试对话",
+    transcript.interviewerLog,
+    "",
+    "### 旁路分析记录",
+    transcript.analysisLog,
+  ].join("\n")
 }
 
 function fallbackHandoff(record: InterviewSessionRecord, transcript: SessionTranscript): string {
-  const answered = transcript.exchanges.filter((item) => item.answer && item.answer !== "（未记录回答）").length
+  const answered = countCandidateReplies(transcript.interviewerLog)
   return [
     `## ${record.roundLabel} 交接评价`,
     "",

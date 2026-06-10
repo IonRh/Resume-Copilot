@@ -59,17 +59,23 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   lockedMode?: AgentMode
   hideSessionControls?: boolean
   workspace?: WorkspaceContextValue
+  disabled?: boolean
+  disabledReason?: string
   onUserSubmit?: (text: string) => void
   onUserTurnComplete?: (text: string) => void
   onNewSession?: (mode: AgentMode) => void
+  onRunningChange?: (running: boolean) => void
 }>(function AgentPanel({
   asOverlay = false,
   lockedMode,
   hideSessionControls = false,
   workspace,
+  disabled = false,
+  disabledReason,
   onUserSubmit,
   onUserTurnComplete,
   onNewSession,
+  onRunningChange,
 }, ref) {
   const contextWorkspace = useResumeWorkspace()
   const ws = workspace ?? contextWorkspace
@@ -97,6 +103,10 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   // 锁定模式（专注页）直接采用 lockedMode；编辑器内在 EDITOR_MODES 间切换，残留的 jd/interview 归一到 edit。
   const panelMode: AgentMode = lockedMode ?? (EDITOR_MODES.has(ws.mode) ? ws.mode : "edit")
   const profile = AGENT_PROFILES[panelMode]
+
+  useEffect(() => {
+    onRunningChange?.(running)
+  }, [onRunningChange, running])
 
   // 专注页：确保 store.mode 与锁定模式一致，使 system prompt 正确。
   useEffect(() => {
@@ -216,7 +226,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
 
   const submit = (text?: string) => {
     const value = (text ?? input).trim()
-    if (!value || running) return
+    if (!value || running || disabled) return
     setInput("")
     setMention((m) => ({ ...m, active: false }))
     onUserSubmit?.(value)
@@ -226,7 +236,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
   }
 
   const handleVoiceToggle = async () => {
-    if (running || voice.transcribing) return
+    if (running || disabled || voice.transcribing) return
     if (voice.recording) {
       const text = await voice.stopRecording()
       if (!text) {
@@ -484,7 +494,9 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
               }}
               onKeyDown={onKeyDown}
               placeholder={
-                lockedMode === "interview"
+                disabled && disabledReason
+                  ? disabledReason
+                  : lockedMode === "interview"
                   ? voice.recording
                     ? "正在录音，再次点击麦克风结束并转写"
                     : "输入或语音回答，面试官会继续追问"
@@ -495,6 +507,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                     : "描述你的需求，如「润色工作经历」（@ 引用模块）"
               }
               rows={2}
+              disabled={disabled}
               className="max-h-32 w-full resize-none bg-transparent text-sm outline-none"
             />
             <div className="flex items-center justify-between pt-1">
@@ -513,7 +526,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                     size="sm"
                     variant={voice.recording ? "destructive" : "outline"}
                     className={`h-7 gap-1 bg-transparent text-xs ${voice.recording ? "animate-pulse" : ""}`}
-                    disabled={running || voice.transcribing}
+                    disabled={running || disabled || voice.transcribing}
                     onClick={() => void handleVoiceToggle()}
                     title={voice.recording ? "结束录音并转写" : "语音回答"}
                   >
@@ -532,7 +545,7 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
                   <Button
                     size="sm"
                     className="brand-gradient-bg h-7 gap-1 border-0 text-xs"
-                    disabled={!input.trim() || voice.transcribing}
+                    disabled={disabled || !input.trim() || voice.transcribing}
                     onClick={() => submit()}
                   >
                     <Icon icon="mdi:send" className="h-3.5 w-3.5" /> 发送

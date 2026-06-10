@@ -35,7 +35,8 @@ export function reportToMarkdown(report: FullInterviewReport): string {
   for (const round of report.rounds) {
     lines.push(`## ${round.roundLabel}（${round.score} 分）`, "", round.summary, "")
     round.questions.forEach((item, index) => {
-      lines.push(`### Q${index + 1}. ${item.question}`)
+      const prefix = item.segmentLabel || `Q${index + 1}`
+      lines.push(`### ${prefix}. ${item.question}`)
       if (item.starRating) lines.push(`评分：${item.starRating}/5 星`)
       lines.push("", "**你的回答**", item.answer, "", "**评价**", item.evaluation)
       if (item.referenceAnswer) {
@@ -131,7 +132,16 @@ export default function InterviewReportView({ report }: { report: FullInterviewR
                 <div key={index} className="rounded-xl border border-border bg-muted/10 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="text-sm font-medium">
-                      Q{index + 1}. {item.question}
+                      {item.segmentLabel ? (
+                        <>
+                          <Badge variant={item.segmentKind === "core" ? "default" : "outline"} className="mr-2 align-middle">
+                            {item.segmentLabel}
+                          </Badge>
+                          {item.question}
+                        </>
+                      ) : (
+                        <>Q{index + 1}. {item.question}</>
+                      )}
                     </div>
                     {stars(item.starRating)}
                   </div>
