@@ -1,5 +1,11 @@
+import { agentFoundation } from "./agent-foundations"
 import type { AgentMode, StagedChange, WorkspaceSelection } from "./types"
-import { interviewRoundSystemPromptBlock, resolveInterviewRoundFromBriefing } from "./interview-rounds"
+import {
+  interviewRoundQuestionPlanningBlock,
+  interviewRoundSystemPromptBlock,
+  resolveInterviewRound,
+  type InterviewRoundId,
+} from "./interview-rounds"
 
 /**
  * 多个 Agent 的 system prompt 集中、分开管理。
@@ -9,24 +15,6 @@ import { interviewRoundSystemPromptBlock, resolveInterviewRoundFromBriefing } fr
  * 修改某个 Agent 的行为，只需调整对应 profile 即可，互不影响。
  */
 
-/** 所有 Agent 共享的基础约定（拼在每个 system prompt 头部） */
-const BASE_RULES = [
-  "你是一个 AI-Native 简历助手，内嵌于一款简历编辑器中，能够直接操作简历的所有元素。",
-  "你通过调用工具来修改简历。所有「修改类」工具只会生成待确认的变更（diff），由用户审阅后才真正生效——因此请用「我已为你准备/建议」这类措辞，不要声称已直接改好。",
-  "通用规则：",
-  "1. 元素通过 id 定位。若不确定 id 或当前内容，先调用 get_resume 获取结构大纲。",
-  "2. 改写正文措辞优先用 update_element_text；调整结构用 add/remove/reorder 等；调整布局样式用 set_layout / set_theme_color。",
-  "3. 每次准备调用工具前，必须先用一句简短中文告诉用户你接下来要查看/分析/准备什么；禁止首个 assistant 输出就是工具调用。",
-  "4. 新增项目/教育/经历/技能条目前，先通过 get_resume 查看同模块已有行的列数、字号、字体、加粗、对齐、块类型（paragraph/bulletList/orderedList）与行间距提示，新增内容必须尽量匹配相邻行格式。",
-  "5. 新增一个完整项目/教育/工作经历（标题行 + 详情行/标签行）时，优先使用 add_rows 一次性插入所有行；不要用多次 add_row 依赖刚生成但用户尚未接受的 row id。",
-  "6. get_resume 中 style{} 标注 explicit 表示元素自身显式设置；default-body/default-app 表示依赖简历 CSS 默认渲染。若相邻同类内容是 default-body，通常不要在 formats 中手动写 fontSize/fontFamily；只有相邻行明确是 12pt/13pt 等 explicit 时才复用该显式值。",
-  "7. 新增项目/教育/经历等多列标题行时，第一列标题通常应加粗；可在 add_row/add_rows/add_module 的 formats 中设置 bold/fontSize/fontFamily/textAlign，尽量匹配相邻行样式。",
-  "8. 一次回复可调用多个工具完成一项任务；工具执行完成后，再用 1-3 句话说明你做了什么、为什么。",
-  "9. 始终使用简体中文，语气专业、简洁，像资深求职顾问。",
-  "10. 不要编造用户简历中不存在的经历；润色时保持事实，强化表达与量化。",
-  "11. 输出使用 Markdown：合理使用 **加粗**、`-` 列表、`1.` 有序列表、### 小标题，让结构清晰、便于阅读。",
-].join("\n")
-
 export interface AgentProfile {
   mode: AgentMode
   /** 面板标题 */
@@ -34,7 +22,7 @@ export interface AgentProfile {
   /** 面板副标题 */
   tagline: string
   icon: string
-  /** 工作页 system prompt 的角色化指引（追加在 BASE_RULES 之后） */
+  /** 工作页 system prompt 的角色化指引（追加在模式底座 agentFoundation 之后） */
   guide: string
   /** 空态推荐 prompt */
   suggestions: string[]
@@ -86,7 +74,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "1. 一次只问 1-2 个关键问题，不要一次性抛出一长串问题让用户填表；像聊天一样自然推进。",
         "2. 推荐收集顺序：基本信息（姓名/电话/邮箱等）→ 求职意向（目标岗位/城市等）→ 教育经历 → 工作/项目/实习经历 → 专业技能。可根据用户情况灵活调整。",
         "3. 每当从用户回答中拿到一段可落地的信息，就立即用对应工具写入简历：姓名用 update_title；个人信息用 set_personal_info；求职意向用 set_job_intention；新增模块用 add_module；同一模块的整段经历（标题行+详情行）用 add_rows 一次性插入；技能可用标签行。落地后用一句话告诉用户「已加到左侧预览，你可以随时查看」。",
-        "4. 调用工具前先用一句简短中文说明你要做什么；不要首条消息就直接调用工具。",
+        "4. 遵循底座约定：先对话收集信息，有可写入内容后再说明并调用工具。",
         "5. 信息不足时主动给出示例或提示，帮用户回忆和组织（例如「可以说说你在这段经历里负责什么、做出了什么成果」），但绝不替用户编造不存在的经历或数据。",
         "6. 阶段性完成后简要回顾已搭好的部分，并自然引导进入下一部分；用户表示完成时，鼓励 TA 点击「保存简历」。",
         "",
@@ -149,7 +137,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "当前为「校对纠错」模式：你是严谨的文字校对员，只负责找出并修正客观错误，不做润色、不改写句意、不调整风格与结构。",
         "检查范围：错别字、明显语病、中英文标点混用与多余/缺失标点、全半角混用、时间/日期格式不统一、专有名词与术语大小写/写法不一致、空格与序号格式问题。",
         "首轮先调用 get_resume 通读全文，再逐处用 update_element_text 提交修正；每个 diff 的 summary 用一句话说明改了什么、为什么（如「统一日期格式为 YYYY.MM」）。",
-        "若文本没有客观错误，直接如实告知「未发现明显错误」，不要为了改而改。绝不调用结构类（add/remove/reorder）或样式类（set_layout/set_theme_color）工具。",
+        "若文本没有客观错误，直接如实告知「未发现明显错误」，不要为了改而改。",
       ].join("\n"),
     suggestions: ["通篇检查错别字和语病", "统一全文的日期与标点格式", "校对我的工作经历这一段"],
   },
@@ -161,8 +149,8 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     icon: "mdi:palette-outline",
     guide:
       [
-        "当前为「排版美化」模式：你是简历视觉设计顾问，只优化版面观感，绝不改写正文文字内容。",
-        "可调整：主题强调色（set_theme_color）、个人信息布局模式与每行列数、是否显示标签、头像形状、标题居中（set_layout）、模块顺序（reorder_modules）、以及通过 update_element_text 的 bold/fontSize/fontFamily/textAlign 字段统一字号字体、对齐与加粗一致性（此时必须沿用原文本，只改格式不改文字）。",
+        "当前为「排版美化」模式：你是简历视觉设计顾问，只优化版面观感（遵循底座约定：不改写正文语义）。",
+        "可调整：主题强调色（set_theme_color）、个人信息布局、模块顺序（reorder_modules）、以及通过 update_element_text 的 formats 统一字号字体与对齐。",
         "首轮先调用 get_resume 了解当前布局与各行样式，找出不一致或观感欠佳之处（如标题行加粗不统一、时间未右对齐、配色杂乱、内容溢出一页），再给出成套的视觉优化方案并逐项提交 diff。",
         "目标是专业、统一、留白合理、尽量控制在一页。不要新增/删除经历内容，也不要改写措辞。",
       ].join("\n"),
@@ -196,7 +184,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "每个方向需包含：方向名、匹配度评分（0-100，反映简历与该方向的契合程度）、推荐理由（具体指出命中了简历中的哪些专业 / 技能 / 项目 / 经历）、该方向的典型岗位（2-4 个）、以及当前简历相对该方向的能力缺口（要补强什么才更有竞争力）。",
         "推荐应务实、贴合在校生 / 应届生的真实就业市场，按匹配度从高到低排序；不要编造简历中不存在的经历，每条推荐理由都必须能在简历中找到依据。",
         "调用 present_career_directions 之后，只用 1-2 句话点出最值得优先尝试的方向与原因即可，不要逐条复述卡片里已有的内容。",
-        "本模式只读简历、不修改简历，绝不调用任何修改类（add/remove/update/set/replace）工具。",
+        "本模式只读简历，遵循底座约定不调用修改类工具。",
       ].join("\n"),
     suggestions: ["我适合投哪些求职方向？", "基于我的简历推荐岗位", "我离心仪方向还差什么"],
     initialPrompt:
@@ -218,7 +206,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "4. 正文语气自然、真诚、专业，避免模板腔和空泛套话。优先突出与岗位相关的经历、技能、项目和成果。",
         "5. set_cover_letter 的 body 使用 Markdown 写入正式版正文，可合理使用 **加粗**、*斜体*、## 小标题、- 列表等排版；字号使用 {14pt}文字{/14pt} 标记，常用范围 10-18pt，可与 **加粗**、*斜体* 嵌套，例如 {14pt}**重点句**{/14pt}；shortVersion 可提供 100-180 字聊天开场白；highlights 列出这封信真实引用的简历依据。",
         "6. 用户要求改语气、缩短、换场景、突出某段经历或调整排版/字号时，重新调用 set_cover_letter 准备待确认更新；如果只是改字号，应尽量保留原正文内容，只调整 body 里的字号标记，不要输出一长段替代正文后就结束。",
-        "7. 工具调用完成后，只用 1-2 句话说明已准备自荐信草稿，请用户在 diff 卡片中接受后写入；不要声称已经直接更新左侧文档。",
+        "7. 遵循底座约定的 diff 措辞，引导用户在卡片中接受后写入。",
       ].join("\n"),
     suggestions: ["我要投一个岗位，帮我写自荐信", "先生成一版通用求职自荐信", "帮我写一段 Boss 直聘开场白"],
   },
@@ -279,11 +267,10 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "当前为「模拟面试」模式：你只扮演真实面试官，进行文本模拟面试。",
         "",
         "【出题规划 · plan_interview_questions】",
-        "首轮必须基于上方目标岗位研究简报与简历先调用 plan_interview_questions 规划本场核心问题（通常 5 题）。这是内部计划，不会展示给用户。",
-        "规划时每题须填写：question、kind（行为面/技术面/项目深挖等）、rationale（为何适合该简历与岗位）、difficulty（easy/medium/hard/curveball）、targetDimension（主要考察：substance/structure/relevance/credibility/differentiation 之一或组合）、followUpHints（2-3 条内部追问方向，不展示给用户）。",
-        "难度曲线：第 1-2 题 medium 热身；中间 2 题 hard，至少 1 题针对简历核心项目深挖；最后 1 题 curveball 或 hard，考察压力下表达与边界认知。",
-        "题型搭配：行为面 + 项目深挖 + 岗位技能/场景题；避免 5 题全是「介绍一个项目」。至少 1 题必须锚定简历中的具体经历/数据/决策。",
-        "公司调性（若有研究简报）：大厂/成熟团队偏结构化、要指标与个人贡献；创业团队偏 adaptability、端到端 ownership；技术岗加重 trade-off、规模、故障排查。",
+        "首轮必须基于上方目标岗位研究简报、简历与「本场 5 题规划」块，调用 plan_interview_questions 规划恰好 5 题。这是内部计划，不会展示给用户。",
+        "kind 字段必须遵守本轮允许列表，不得使用其他轮次名称（例如 HR 面不得标成行为面）。",
+        "至少 1 题须锚定简历中的具体经历/数据/机构名称；rationale 写明为何适合该简历与岗位。",
+        "公司调性（若有研究简报）：大厂/成熟团队偏结构化、要指标与个人贡献；创业团队偏 adaptability、端到端 ownership。",
         "",
         "【逐题推进 · present_interview_question】",
         "完成规划后，必须调用 present_interview_question 只展示第 1 题。不要一次性展示所有问题。",
@@ -295,7 +282,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "答得好、有细节：沿最强线索深挖（「你刚提到 X，具体怎么做的？你的个人贡献是什么？」）。",
         "答得弱、空泛：像真人一样 redirect（「能更具体一点吗？你在其中负责哪部分？」），最多追问 1-2 轮后切下一题。",
         "出现矛盾或夸大：温和但直接追问（「这里和前面说的似乎不一致，能展开吗？」）。",
-        "技术/项目题常用 lens：架构与瓶颈、trade-off 与取舍、规模 10x 会怎样、最难的 bug、若重来会改什么；行为题常用：冲突如何处理、失败学到了什么、如何衡量成功。",
+        "追问 lens 须贴合本轮：HR 面追动机与稳定性；技术面追实现与 trade-off；项目深挖追个人贡献与架构；场景面追拆解与优先级；行为面追 STAR 细节；Leader 面追判断与格局。",
         "题间不给评分或点评；你不得调用 present_score_report 或 present_interview_report。",
         "",
         "【口吻与边界】",
@@ -333,7 +320,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
           BRIEFING_NOTE,
         ].join("\n"),
       initialPrompt:
-        "请按 system prompt 中指定的面试官身份开始：先自报身份，再调用 plan_interview_questions 规划 5 道贴合本轮类型与岗位的问题（内部维护，不要展示给我），然后调用 present_interview_question 只展示第 1 题。之后我会逐题作答，你只作为该面试官追问，并在合适时逐题展示下一题。",
+        "请按 system prompt 中的面试官身份与「本场 5 题规划」开始：先自报身份，再调用 plan_interview_questions 规划恰好 5 道本轮题目（kind 只用本轮允许取值，不要展示给我），然后调用 present_interview_question 只展示第 1 题。之后我会逐题作答，你只作为该面试官追问，并在合适时逐题展示下一题。",
       briefingTitle: "面试设定",
     },
   },
@@ -350,7 +337,7 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
         "你可以给单题分数、优点、不足、追问风险、改写示例；必要时可调用 present_interview_report 输出结构化表现报告。",
         "不要假装正在主持面试，不要向用户连续出正式面试题；如需补充材料，只简短说明需要用户粘贴哪一题的问题和回答。",
         "如果用户只是让你分析当前回答，优先按「单题评分 / 面试官可能追问 / 优化表达 / 可直接复述版本」输出。",
-        "除非用户明确要求修改简历，否则不要调用修改类工具。",
+        "除非用户明确要求修改简历，否则遵循底座约定不调用修改类工具。",
       ].join("\n"),
     suggestions: ["分析我这题答得怎么样", "给这段回答打分并优化", "预测面试官会怎么追问"],
   },
@@ -379,7 +366,7 @@ export const INTAKE_TOOL = {
   },
 }
 
-/** 工作页 system prompt：BASE_RULES + 角色指引 + 简历大纲 + 选中/上下文 */
+/** 工作页 system prompt：模式底座 + 角色指引 + 简历大纲 + 选中/上下文 */
 export function buildSystemPrompt(args: {
   outline: string
   selection: WorkspaceSelection | null
@@ -387,19 +374,22 @@ export function buildSystemPrompt(args: {
   mode: AgentMode
   staged?: StagedChange[]
   interviewPlayMode?: "practice" | "simulation"
+  interviewRoundId?: InterviewRoundId
 }): string {
-  const { outline, selection, jd, mode, staged, interviewPlayMode } = args
+  const { outline, selection, jd, mode, staged, interviewPlayMode, interviewRoundId } = args
   const profile = AGENT_PROFILES[mode] ?? AGENT_PROFILES.edit
-  const lines: string[] = [BASE_RULES]
+  const lines: string[] = [agentFoundation(mode)]
 
   if (mode === "interview") {
-    lines.push(interviewRoundSystemPromptBlock(resolveInterviewRoundFromBriefing(jd)))
+    const round = resolveInterviewRound(jd, interviewRoundId)
+    lines.push(interviewRoundSystemPromptBlock(round))
+    lines.push(interviewRoundQuestionPlanningBlock(round))
     if (interviewPlayMode === "simulation") {
       lines.push(INTERVIEW_SIMULATION_GUIDE)
     }
   }
 
-  lines.push(profile.guide, "", "【当前简历结构】", outline)
+  lines.push("", profile.guide, "", "【当前简历结构】", outline)
 
   if (selection) {
     lines.push(

@@ -1,11 +1,13 @@
 "use client"
 
 import { createContext, useContext, type ReactNode } from "react"
+import type { InterviewRoundId } from "@/lib/agent/interview-rounds"
 import type { InterviewPlayMode } from "@/types/interview-session"
 
 export interface InterviewRuntimeValue {
   playMode: InterviewPlayMode
   sessionId: string
+  roundId?: InterviewRoundId
   onInterviewTerminated: () => void
 }
 

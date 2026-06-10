@@ -109,6 +109,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
           mode: ws.mode,
           staged: ws.staged,
           interviewPlayMode: ws.mode === "interview" ? interviewRuntime?.playMode : undefined,
+          interviewRoundId: ws.mode === "interview" ? interviewRuntime?.roundId : undefined,
         }),
       }
 

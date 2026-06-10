@@ -21,7 +21,11 @@ import { buildJdVariantTitle, createJdVariantResumeData, parseResumeVariantTitle
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { AGENT_PROFILES } from "@/lib/agent/prompts"
-import { composeInterviewBriefing, getInterviewRound } from "@/lib/agent/interview-rounds"
+import {
+  composeInterviewBriefing,
+  getInterviewRound,
+  type InterviewRoundId,
+} from "@/lib/agent/interview-rounds"
 import { deleteInterviewAgentStateKeys, touchInterviewSession, getInterviewSessionById, recordInterviewTermination } from "@/lib/interview-sessions"
 import { InterviewRuntimeProvider } from "@/lib/interview-runtime-context"
 import type { InterviewPlayMode } from "@/types/interview-session"
@@ -57,6 +61,7 @@ export default function CareerWorkspace(props: CareerWorkspaceProps) {
 function InterviewWorkspace(props: CareerWorkspaceProps) {
   const [sessionId] = useState<string>(() => props.sessionId || `page-${Date.now()}`)
   const [briefing, setBriefing] = useState("")
+  const [roundId, setRoundId] = useState<InterviewRoundId | undefined>()
   const [playMode, setPlayMode] = useState<InterviewPlayMode>("practice")
   const [failModalOpen, setFailModalOpen] = useState(false)
   const storageScope = `${props.entryId}.${sessionId}`
@@ -73,6 +78,7 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
       .then((record) => {
         if (!record) return
         const round = getInterviewRound(record.roundId)
+        setRoundId(record.roundId)
         setBriefing(round ? composeInterviewBriefing(round, record.jobBriefing || record.briefingPreview || "") : record.jobBriefing || "")
         if (record?.playMode === "simulation") setPlayMode("simulation")
       })
@@ -84,6 +90,7 @@ function InterviewWorkspace(props: CareerWorkspaceProps) {
       value={{
         playMode,
         sessionId,
+        roundId,
         onInterviewTerminated: handleInterviewTerminated,
       }}
     >
@@ -266,6 +273,13 @@ function CareerInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 面试台：会话 briefing 异步加载后同步到 Agent 上下文，避免 system prompt 落到默认 HR 面。
+  useEffect(() => {
+    if (mode !== "interview" || !briefing) return
+    briefingRef.current = briefing
+    setJd(briefing)
+  }, [briefing, mode, setJd])
+
   // JD 定制每次进入都开一个干净会话，避免串入上一次岗位分析上下文。
   useEffect(() => {
     if (mode !== "jd" || !hydrated || freshJdSessionRef.current) return
@@ -281,9 +295,10 @@ function CareerInner({
   // 非 JD 专注页只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
   useEffect(() => {
     if (mode === "jd" || !hydrated || turnCount > 0 || kickoff) return
+    if (mode === "interview" && !briefingRef.current) return
     const prompt = profile.initialPrompt ?? profile.intake?.initialPrompt
     if (prompt) setKickoff(prompt)
-  }, [hydrated, kickoff, mode, profile.initialPrompt, profile.intake?.initialPrompt, setKickoff, turnCount])
+  }, [briefing, hydrated, kickoff, mode, profile.initialPrompt, profile.intake?.initialPrompt, setKickoff, turnCount])
 
   useEffect(() => {
     if (mode !== "interview" || !interviewSessionId || !onInterviewActivity) return

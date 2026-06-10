@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { AUTH_COOKIE, createUser, verifyUser } from "@/lib/server/auth-users";
 
+function getRequestOrigin(req: NextRequest) {
+  const publicOrigin = (process.env.PUBLIC_APP_ORIGIN || process.env.NEXT_PUBLIC_APP_ORIGIN || "").trim();
+  if (publicOrigin) return publicOrigin.replace(/\/+$/, "");
+
+  const host = (req.headers.get("x-forwarded-host") || req.headers.get("host") || "").split(",")[0].trim();
+  const proto = (req.headers.get("x-forwarded-proto") || "http").split(",")[0].trim() || "http";
+  return host ? `${proto}://${host}` : "http://localhost:3000";
+}
+
+function redirectTo(req: NextRequest, location: string, status = 303) {
+  const target = location.startsWith("http://") || location.startsWith("https://")
+    ? location
+    : `${getRequestOrigin(req)}${location.startsWith("/") ? location : `/${location}`}`;
+  return new NextResponse(null, {
+    status,
+    headers: { Location: target },
+  });
+}
+
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   let inputPwd = "";
@@ -34,26 +53,27 @@ export async function POST(req: NextRequest) {
       ? await createUser(username, inputPwd)
       : (await verifyUser(username, inputPwd)) || "";
   } catch (error) {
-    const url = new URL("/auth", req.url);
+    const url = new URL("/auth", "http://internal.local");
     if (from) url.searchParams.set("from", from);
     url.searchParams.set("e", error instanceof Error ? error.message : "账号创建失败");
-    return NextResponse.redirect(url, 303);
+    return redirectTo(req, `${url.pathname}${url.search}`);
   }
 
   if (!cookieValue) {
-    const url = new URL("/auth", req.url);
+    const url = new URL("/auth", "http://internal.local");
     if (from) url.searchParams.set("from", from);
     url.searchParams.set("e", "用户名或密码错误");
     // Use 303 to convert POST to GET and avoid 405 on pages
-    return NextResponse.redirect(url, 303);
+    return redirectTo(req, `${url.pathname}${url.search}`);
   }
 
   // sanitize redirect target to internal path only
   const safeFrom = typeof from === "string" && from.startsWith("/") && from !== "/auth" ? from : "/";
-  const res = NextResponse.redirect(new URL(safeFrom, req.url), 303);
+  const res = redirectTo(req, safeFrom);
+  const isSecureOrigin = getRequestOrigin(req).startsWith("https://");
   res.cookies.set(AUTH_COOKIE, cookieValue, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureOrigin,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 days

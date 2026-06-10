@@ -535,7 +535,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "plan_interview_questions",
       description:
-        "内部规划工具：基于简历与目标岗位先设计并维护本场面试的核心问题清单。调用后不会把问题卡片展示给用户；仅用于让模型在后续逐题推进时参考。",
+        "内部规划工具：基于简历、目标岗位与 system prompt 中「本场 5 题规划」块，设计本场恰好 5 道题。kind 必须来自本轮允许列表，禁止填其他轮次名称。调用后不会展示给用户。",
       parameters: {
         type: "object",
         properties: {
@@ -546,7 +546,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
               type: "object",
               properties: {
                 question: { type: "string" },
-                kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
+                kind: {
+                  type: "string",
+                  description: "本轮题目子类，须与 system prompt「本场 5 题规划」中的允许 kind 一致，不得填其他轮次名称",
+                },
                 rationale: { type: "string", description: "内部理由：为什么这题适合该简历与目标岗位。不要展示给用户。" },
                 difficulty: {
                   type: "string",
@@ -577,12 +580,15 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "present_interview_question",
       description:
-        "展示当前这一道模拟面试问题卡片。每次只展示 1 道题；不要附带作答提示、评分标准、参考答案或点评。",
+        "展示当前这一道模拟面试问题卡片。每次只展示 1 道题；kind 须与 plan 中该题一致且属于本轮允许列表。不要附带作答提示、评分标准、参考答案或点评。",
       parameters: {
         type: "object",
         properties: {
           question: { type: "string" },
-          kind: { type: "string", description: "类别，如 行为面/技术面/项目深挖" },
+          kind: {
+            type: "string",
+            description: "与 plan 中该题相同的 kind，须为本轮允许取值，不得填其他轮次名称",
+          },
           currentIndex: { type: "integer", description: "当前是第几题，从 1 开始" },
           total: { type: "integer", description: "本场计划题目总数" },
           intro: { type: "string", description: "可选的一句简短过渡语，不要包含其他题目" },

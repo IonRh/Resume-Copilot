@@ -178,7 +178,7 @@ export default function InterviewCampaignReport({ campaignId }: { campaignId: st
             <div className="rounded-2xl border border-border bg-card p-5">
               <h2 className="text-base font-semibold">选择代表记录</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                已完成或被关闭的投递不必凑满五轮，选择已有记录即可生成阶段性复盘。
+                已完成或被关闭的投递不必凑满全部轮次，选择已有记录即可生成阶段性复盘。
               </p>
             </div>
 

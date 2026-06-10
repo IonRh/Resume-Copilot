@@ -165,7 +165,9 @@ export async function runAiCheckup(data: ResumeData, signal?: AbortSignal): Prom
   })
   const payload = (await res.json().catch(() => ({}))) as AiCheckupReport & { error?: string; detail?: string }
   if (!res.ok) {
-    throw new Error(payload.error || payload.detail || `体检失败（${res.status}）`)
+    const detail = typeof payload.detail === "string" ? payload.detail.trim() : ""
+    const summary = payload.error || `体检失败（${res.status}）`
+    throw new Error(detail ? `${summary}：${detail.slice(0, 240)}` : summary)
   }
   return {
     summary: payload.summary || "AI 已完成简历体检。",

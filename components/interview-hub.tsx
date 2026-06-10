@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Icon } from "@iconify/react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -35,7 +36,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { StoredResume } from "@/types/resume"
 import type { InterviewRoundHandoff, InterviewSessionRecord } from "@/types/interview-session"
 import { getAllResumes, getCachedResumes } from "@/lib/storage"
-import { getNextRound } from "@/lib/agent/interview-rounds"
+import { getNextRound, getRoundIndex } from "@/lib/agent/interview-rounds"
 import {
   createNextRoundSession,
   deleteInterviewSession,
@@ -47,7 +48,12 @@ import {
   generateRoundHandoff,
   getStoredRoundHandoff,
 } from "@/lib/interview-handoff"
-import { loadInterviewAgentSessions, type InterviewAgentSessionOption } from "@/lib/interview-report"
+import {
+  groupSessionsByCampaign,
+  hasReportableInterview,
+  loadInterviewAgentSessions,
+  type InterviewAgentSessionOption,
+} from "@/lib/interview-report"
 import { Markdown } from "@/components/agent/markdown"
 import CareerIntakeDialog from "@/components/agent/career-intake-dialog"
 
@@ -82,6 +88,69 @@ function handoffCacheKey(interviewSessionId: string, agentSessionId: string): st
   return agentSessionId === interviewSessionId ? interviewSessionId : `${interviewSessionId}:${agentSessionId}`
 }
 
+interface CampaignGroup {
+  campaignId: string
+  title: string
+  resumeTitle: string
+  playMode: InterviewSessionRecord["playMode"]
+  sessions: InterviewSessionRecord[]
+  updatedAt: string
+  hasInProgress: boolean
+  distinctRoundCount: number
+}
+
+function sortCampaignSessions(sessions: InterviewSessionRecord[]): InterviewSessionRecord[] {
+  return [...sessions].sort((a, b) => {
+    const roundDiff = getRoundIndex(a.roundId) - getRoundIndex(b.roundId)
+    if (roundDiff !== 0) return roundDiff
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  })
+}
+
+function buildCampaignGroups(sessions: InterviewSessionRecord[]): CampaignGroup[] {
+  const map = groupSessionsByCampaign(sessions)
+  return Array.from(map.entries())
+    .map(([campaignId, list]) => {
+      const sorted = sortCampaignSessions(list)
+      const latest = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+      const distinctRoundCount = new Set(list.map((item) => item.roundId)).size
+      return {
+        campaignId,
+        title: latest.title,
+        resumeTitle: latest.resumeTitle,
+        playMode: latest.playMode,
+        sessions: sorted,
+        updatedAt: latest.updatedAt,
+        hasInProgress: list.some((item) => item.status === "in_progress"),
+        distinctRoundCount,
+      }
+    })
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+}
+
+function campaignStatusMeta(sessions: InterviewSessionRecord[]) {
+  if (sessions.some((item) => item.status === "in_progress")) return statusMeta("in_progress")
+  if (sessions.every((item) => item.status === "completed")) return statusMeta("completed")
+  if (sessions.some((item) => item.status === "terminated")) return statusMeta("terminated")
+  return statusMeta("in_progress")
+}
+
+function pickContinueSession(sessions: InterviewSessionRecord[]): InterviewSessionRecord | null {
+  if (!sessions.length) return null
+  const inProgress = sessions.filter((item) => item.status === "in_progress")
+  const pool = inProgress.length ? inProgress : sessions
+  return [...pool].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+}
+
+function sessionMatchesKeyword(session: InterviewSessionRecord, needle: string): boolean {
+  return (
+    session.title.toLowerCase().includes(needle) ||
+    session.resumeTitle.toLowerCase().includes(needle) ||
+    session.roundLabel.toLowerCase().includes(needle) ||
+    (session.briefingPreview || "").toLowerCase().includes(needle)
+  )
+}
+
 export default function InterviewHub() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -101,6 +170,8 @@ export default function InterviewHub() {
   const [handoffBusy, setHandoffBusy] = useState(false)
   const [handoffError, setHandoffError] = useState<string | null>(null)
   const [handoffSourceOptions, setHandoffSourceOptions] = useState<InterviewAgentSessionOption[]>([])
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set())
+  const expandInitializedRef = useRef(false)
 
   const refreshSessions = useCallback(async () => {
     setSessions(await loadInterviewSessions())
@@ -150,17 +221,29 @@ export default function InterviewHub() {
 
   const mostRecent = resumes[0]
 
-  const visibleSessions = useMemo(() => {
+  const campaignGroups = useMemo(() => buildCampaignGroups(sessions), [sessions])
+
+  const visibleCampaigns = useMemo(() => {
     const needle = keyword.trim().toLowerCase()
-    if (!needle) return sessions
-    return sessions.filter(
-      (item) =>
-        item.title.toLowerCase().includes(needle) ||
-        item.resumeTitle.toLowerCase().includes(needle) ||
-        item.roundLabel.toLowerCase().includes(needle) ||
-        (item.briefingPreview || "").toLowerCase().includes(needle),
+    if (!needle) return campaignGroups
+    return campaignGroups.filter(
+      (group) =>
+        group.title.toLowerCase().includes(needle) ||
+        group.resumeTitle.toLowerCase().includes(needle) ||
+        group.sessions.some((session) => sessionMatchesKeyword(session, needle)),
     )
-  }, [keyword, sessions])
+  }, [campaignGroups, keyword])
+
+  useEffect(() => {
+    if (loading || expandInitializedRef.current || campaignGroups.length === 0) return
+    expandInitializedRef.current = true
+    const initial = new Set<string>()
+    for (const group of campaignGroups) {
+      if (group.hasInProgress) initial.add(group.campaignId)
+    }
+    if (campaignGroups.length === 1) initial.add(campaignGroups[0].campaignId)
+    setExpandedCampaigns(initial)
+  }, [campaignGroups, loading])
 
   const openIntake = useCallback(
     (resumeId?: string) => {
@@ -304,7 +387,9 @@ export default function InterviewHub() {
             <Icon icon="mdi:account-voice" className="h-5 w-5" />
           </span>
           <h1 className="text-lg font-semibold">模拟面试</h1>
-          <Badge variant="secondary">{sessions.length} 场记录</Badge>
+          <Badge variant="secondary">
+            {campaignGroups.length} 场模拟 · {sessions.length} 轮记录
+          </Badge>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" className="gap-2 bg-transparent" onClick={() => router.push("/resumes")}>
@@ -321,7 +406,7 @@ export default function InterviewHub() {
 
       <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3">
         {[
-          { label: "历史场次", value: sessions.length, icon: "mdi:clipboard-text-outline", tint: "text-blue-600" },
+          { label: "模拟场次", value: campaignGroups.length, icon: "mdi:clipboard-text-outline", tint: "text-blue-600" },
           {
             label: "进行中",
             value: sessions.filter((item) => item.status === "in_progress").length,
@@ -365,7 +450,7 @@ export default function InterviewHub() {
           <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
             <Icon icon="mdi:loading" className="agent-spin mr-1 inline h-4 w-4" /> 加载中…
           </div>
-        ) : visibleSessions.length === 0 ? (
+        ) : visibleCampaigns.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-muted">
               <Icon icon="mdi:account-voice" className="h-7 w-7 text-primary" />
@@ -383,87 +468,202 @@ export default function InterviewHub() {
             ) : null}
           </div>
         ) : (
-          visibleSessions.map((session) => {
-            const meta = statusMeta(session.status)
-            const nextRound = getNextRound(session.roundId)
+          visibleCampaigns.map((group) => {
+            const campaignMeta = campaignStatusMeta(group.sessions)
+            const continueSessionRecord = pickContinueSession(group.sessions)
+            const expanded = expandedCampaigns.has(group.campaignId)
+            const reportable = hasReportableInterview(group.sessions)
             return (
-              <div
-                key={session.id}
-                className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/20"
+              <Collapsible
+                key={group.campaignId}
+                open={expanded}
+                onOpenChange={(open) => {
+                  setExpandedCampaigns((prev) => {
+                    const next = new Set(prev)
+                    if (open) next.add(group.campaignId)
+                    else next.delete(group.campaignId)
+                    return next
+                  })
+                }}
+                className="rounded-xl border border-border bg-card"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="truncate text-base font-semibold">{session.title}</h3>
-                      <Badge variant="secondary">{session.roundLabel}</Badge>
-                      <Badge variant="outline" className="text-muted-foreground">
-                        {playModeLabel(session.playMode)}
-                      </Badge>
-                      <Badge variant="outline" className={meta.className}>
-                        {meta.label}
-                      </Badge>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Icon icon="mdi:file-document-outline" className="h-3.5 w-3.5" />
-                        {session.resumeTitle}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Icon icon="mdi:clock-outline" className="h-3.5 w-3.5" />
-                        {formatDateTime(session.updatedAt)}
-                      </span>
-                      {session.questionCount ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Icon icon="mdi:format-list-numbered" className="h-3.5 w-3.5" />
-                          已进行 {session.questionCount} 题
-                        </span>
-                      ) : null}
-                      {(session.failCount || 0) > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-red-600">
-                          <Icon icon="mdi:close-circle-outline" className="h-3.5 w-3.5" />
-                          被关闭 {session.failCount} 次
-                        </span>
-                      ) : null}
-                    </div>
-                    {session.briefingPreview ? (
-                      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                        {session.briefingPreview}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1 bg-transparent"
-                      onClick={() => continueSession(session)}
-                    >
-                      <Icon icon="mdi:play-circle-outline" className="h-4 w-4" />
-                      {session.status === "terminated" ? "查看记录" : session.status === "completed" ? "查看" : "继续面试"}
-                    </Button>
-                    {nextRound ? (
-                      <Button
-                        size="sm"
-                        className="brand-gradient-bg gap-1 border-0"
-                        onClick={() => void openHandoffDialog(session)}
+                <div className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 rounded-lg text-left transition-colors hover:bg-muted/30"
                       >
-                        <Icon icon="mdi:arrow-right-circle-outline" className="h-4 w-4" />
-                        进入{nextRound.round}
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      title="删除记录"
-                      onClick={() => setDeleteTarget(session)}
-                    >
-                      <Icon icon="mdi:delete-outline" className="h-4 w-4" />
-                    </Button>
+                        <div className="flex items-start gap-2">
+                          <Icon
+                            icon={expanded ? "mdi:chevron-down" : "mdi:chevron-right"}
+                            className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-base font-semibold">{group.title}</h3>
+                              <Badge variant="outline" className="text-muted-foreground">
+                                {playModeLabel(group.playMode)}
+                              </Badge>
+                              <Badge variant="outline" className={campaignMeta.className}>
+                                {campaignMeta.label}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {group.distinctRoundCount} 轮 · {group.sessions.length} 条记录
+                              </Badge>
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1">
+                                <Icon icon="mdi:file-document-outline" className="h-3.5 w-3.5" />
+                                {group.resumeTitle}
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Icon icon="mdi:clock-outline" className="h-3.5 w-3.5" />
+                                {formatDateTime(group.updatedAt)}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {Array.from(
+                                group.sessions
+                                  .reduce((map, session) => {
+                                    const existing = map.get(session.roundId)
+                                    if (
+                                      !existing ||
+                                      new Date(session.updatedAt).getTime() > new Date(existing.updatedAt).getTime()
+                                    ) {
+                                      map.set(session.roundId, session)
+                                    }
+                                    return map
+                                  }, new Map<string, InterviewSessionRecord>())
+                                  .values(),
+                              )
+                                .sort((a, b) => getRoundIndex(a.roundId) - getRoundIndex(b.roundId))
+                                .map((session) => {
+                                  const meta = statusMeta(session.status)
+                                  return (
+                                    <Badge key={session.roundId} variant="outline" className={`text-[11px] ${meta.className}`}>
+                                      {session.roundLabel.split(" · ")[1] || session.roundLabel}
+                                    </Badge>
+                                  )
+                                })}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    </CollapsibleTrigger>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {continueSessionRecord ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 bg-transparent"
+                          onClick={() => continueSession(continueSessionRecord)}
+                        >
+                          <Icon icon="mdi:play-circle-outline" className="h-4 w-4" />
+                          {continueSessionRecord.status === "in_progress" ? "继续当前轮" : "查看最近一轮"}
+                        </Button>
+                      ) : null}
+                      {reportable ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 bg-transparent"
+                          onClick={() => router.push(`/interviews/report/${group.campaignId}`)}
+                        >
+                          <Icon icon="mdi:file-chart-outline" className="h-4 w-4" />
+                          报告
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
+
+                <CollapsibleContent>
+                  <div className="space-y-2 border-t bg-muted/10 px-4 py-3">
+                    {group.sessions.map((session) => {
+                      const meta = statusMeta(session.status)
+                      const nextRound = getNextRound(session.roundId)
+                      const duplicateCount = group.sessions.filter((item) => item.roundId === session.roundId).length
+                      return (
+                        <div
+                          key={session.id}
+                          className="rounded-lg border border-border/80 bg-card p-3 transition-colors hover:border-primary/30"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="secondary">{session.roundLabel}</Badge>
+                                <Badge variant="outline" className={meta.className}>
+                                  {meta.label}
+                                </Badge>
+                                {duplicateCount > 1 ? (
+                                  <Badge variant="outline" className="text-[11px] text-muted-foreground">
+                                    重复进入
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                  <Icon icon="mdi:clock-outline" className="h-3.5 w-3.5" />
+                                  {formatDateTime(session.updatedAt)}
+                                </span>
+                                {session.questionCount ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Icon icon="mdi:format-list-numbered" className="h-3.5 w-3.5" />
+                                    已进行 {session.questionCount} 题
+                                  </span>
+                                ) : null}
+                                {(session.failCount || 0) > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-red-600">
+                                    <Icon icon="mdi:close-circle-outline" className="h-3.5 w-3.5" />
+                                    被关闭 {session.failCount} 次
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 bg-transparent"
+                                onClick={() => continueSession(session)}
+                              >
+                                <Icon icon="mdi:play-circle-outline" className="h-4 w-4" />
+                                {session.status === "terminated"
+                                  ? "查看记录"
+                                  : session.status === "completed"
+                                    ? "查看"
+                                    : "继续面试"}
+                              </Button>
+                              {nextRound ? (
+                                <Button
+                                  size="sm"
+                                  className="brand-gradient-bg gap-1 border-0"
+                                  onClick={() => void openHandoffDialog(session)}
+                                >
+                                  <Icon icon="mdi:arrow-right-circle-outline" className="h-4 w-4" />
+                                  进入{nextRound.round}
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                title="删除该轮记录"
+                                onClick={() => setDeleteTarget(session)}
+                              >
+                                <Icon icon="mdi:delete-outline" className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             )
           })
         )}
@@ -605,9 +805,9 @@ export default function InterviewHub() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除这场模拟面试？</AlertDialogTitle>
+            <AlertDialogTitle>删除该轮面试记录？</AlertDialogTitle>
             <AlertDialogDescription>
-              将移除「{deleteTarget?.title}」的历史记录及本地对话进度，此操作不可撤销。
+              将移除「{deleteTarget?.roundLabel}」的历史记录及对话进度，同一场模拟的其他轮次不受影响。此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

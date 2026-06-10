@@ -17,6 +17,39 @@ function resolveEndpoint(baseUrl: string): string {
   return `${trimmed}/chat/completions`
 }
 
+async function callChatCompletions(
+  baseUrl: string,
+  apiKey: string,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const endpoint = resolveEndpoint(baseUrl)
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${apiKey}`,
+  }
+
+  const withJsonMode = { ...payload, response_format: { type: "json_object" } }
+  let upstream = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(withJsonMode),
+    signal,
+  })
+
+  if (upstream.status === 400) {
+    await upstream.text().catch(() => "")
+    upstream = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    })
+  }
+
+  return upstream
+}
+
 function extractJson(text: string): unknown {
   const trimmed = text.trim()
   if (!trimmed) return null
@@ -160,22 +193,18 @@ export async function POST(req: Request) {
 
   let upstream: Response
   try {
-    upstream = await fetch(resolveEndpoint(baseUrl), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+    upstream = await callChatCompletions(
+      baseUrl,
+      apiKey,
+      {
         model,
         messages,
         stream: false,
         temperature: 0.25,
         max_tokens: 2600,
-        response_format: { type: "json_object" },
-      }),
-      signal: req.signal,
-    })
+      },
+      req.signal,
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return Response.json({ error: `无法连接模型服务：${message}` }, { status: 502 })
