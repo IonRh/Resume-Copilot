@@ -8,7 +8,7 @@ import { Icon } from "@iconify/react"
 import type { ResumeData } from "@/types/resume"
 import type { WorkspaceSelection } from "@/lib/agent/types"
 import { docToText } from "@/lib/agent/changeset"
-import { sortedByColumn, sortedByOrder } from "@/lib/resume-core"
+import { normalizeResumeTargetId, sortedByColumn, sortedByOrder } from "@/lib/resume-core"
 import RichTextRenderer from "./rich-text-renderer"
 
 interface ResumePreviewProps {
@@ -35,9 +35,14 @@ export default function ResumePreview({
 }: ResumePreviewProps) {
   const isAsciiOnly = (str: string | undefined) => !!str && /^[\x00-\x7F]+$/.test(str);
 
+  const highlightSet = useMemo(
+    () => new Set(highlightedIds.map(normalizeResumeTargetId).filter(Boolean)),
+    [highlightedIds],
+  )
+
   // 选择/高亮辅助
   const selClass = (id: string) => {
-    const hi = highlightedIds.includes(id) ? "rp-highlight" : "";
+    const hi = highlightSet.has(normalizeResumeTargetId(id)) ? "rp-highlight" : "";
     if (!interactive) return hi;
     const sel = selectedId === id ? "rp-selected" : "";
     return `rp-selectable ${sel} ${hi}`.trim();
@@ -312,7 +317,8 @@ export default function ResumePreview({
         >
           <h1
             ref={titleRef}
-            className={`resume-title text-2xl font-bold text-foreground ${shouldStretchPersonalInfo ? 'mb-0' : 'mb-4'} ${resumeData.centerTitle ? 'text-center' : ''}`}
+            data-target-id="title"
+            className={`resume-title text-2xl font-bold text-foreground ${shouldStretchPersonalInfo ? 'mb-0' : 'mb-4'} ${resumeData.centerTitle ? 'text-center' : ''} ${selClass("title")}`}
           >
             {resumeData.title || "简历标题"}
           </h1>
@@ -321,7 +327,8 @@ export default function ResumePreview({
           {jobIntentionText && (
             <div
               ref={jobIntentionWrapRef}
-              className={`job-intention-line text-sm text-muted-foreground mb-3 ${resumeData.centerTitle ? 'text-center' : ''}`}
+              data-target-id="jobIntention"
+              className={`job-intention-line text-sm text-muted-foreground mb-3 ${resumeData.centerTitle ? 'text-center' : ''} ${selClass("jobIntention")}`}
               style={jobIntentionWrapStyle}
             >
               <span ref={jobIntentionBadgeRef} style={jobIntentionBadgeStyle}>
@@ -336,7 +343,8 @@ export default function ResumePreview({
           {shouldDistribute ? (
             isInline ? (
               <div
-                className="personal-info personal-info-row flex items-center justify-between w-full whitespace-nowrap"
+                data-target-id="personal"
+                className={`personal-info personal-info-row flex items-center justify-between w-full whitespace-nowrap ${selClass("personal")}`}
                 style={{ backgroundColor: '#F5F6F8', padding: '8px 12px', borderRadius: '4px' }}
               >
                 {personalInfo.map((item) => (
@@ -372,7 +380,8 @@ export default function ResumePreview({
               </div>
             ) : (
               <div
-                className="personal-info-stretch-wrapper w-full"
+                data-target-id="personal"
+                className={`personal-info-stretch-wrapper w-full ${selClass("personal")}`}
                 style={shouldStretchPersonalInfo ? { minHeight: 0 } : undefined}
               >
                 <div
@@ -427,7 +436,8 @@ export default function ResumePreview({
             )
           ) : isInline ? (
             <div
-              className="personal-info flex items-center justify-between w-full whitespace-nowrap"
+              data-target-id="personal"
+              className={`personal-info flex items-center justify-between w-full whitespace-nowrap ${selClass("personal")}`}
               style={{ backgroundColor: '#F5F6F8', padding: '8px 12px', borderRadius: '4px' }}
             >
               {personalInfo.map((item) => (
@@ -465,7 +475,8 @@ export default function ResumePreview({
             (() => {
               return (
                 <div
-                  className="personal-info personal-info-grid"
+                  data-target-id="personal"
+                  className={`personal-info personal-info-grid ${selClass("personal")}`}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: `repeat(${itemsPerRow}, max-content)`,

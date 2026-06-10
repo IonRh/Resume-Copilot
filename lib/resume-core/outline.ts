@@ -54,7 +54,7 @@ function getElementStyleLabel(content?: JSONContent | null): string {
 
 export function buildResumeOutline(data: ResumeData): string {
   const lines: string[] = []
-  lines.push(`简历标题: "${data.title}"${data.centerTitle ? "（居中）" : "（左对齐）"}`)
+  lines.push(`简历标题(target#title，用 update_title 修改): "${data.title}"${data.centerTitle ? "（居中）" : "（左对齐）"}`)
   if (data.themeColor) lines.push(`主题色: ${data.themeColor}`)
   lines.push(DEFAULT_RENDER_STYLE)
 
@@ -65,7 +65,7 @@ export function buildResumeOutline(data: ResumeData): string {
         `${item.label}=${item.type === "salary" ? `${item.salaryRange?.min ?? ""}-${item.salaryRange?.max ?? ""}` : item.value}`,
       )
       .join(", ")
-    lines.push(`求职意向: ${items}`)
+    lines.push(`求职意向(target#jobIntention，用 set_job_intention 修改，无 element#): ${items}`)
   }
 
   const personalInfo = data.personalInfoSection
@@ -73,7 +73,7 @@ export function buildResumeOutline(data: ResumeData): string {
     const items = sortedByOrder(personalInfo.personalInfo)
       .map((item) => `${item.label}=${item.value.content}`)
       .join(", ")
-    lines.push(`个人信息(${personalInfo.layout?.mode}/${personalInfo.layout?.itemsPerRow ?? 2}列): ${items}`)
+    lines.push(`个人信息(target#personal，用 set_personal_info 修改，无 element#；${personalInfo.layout?.mode}/${personalInfo.layout?.itemsPerRow ?? 2}列): ${items}`)
   }
 
   lines.push("模块:")

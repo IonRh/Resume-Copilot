@@ -219,8 +219,8 @@ export const AGENT_PROFILES: Record<AgentMode, AgentProfile> = {
     guide:
       [
         "当前为「JD 匹配」模式：对照上方目标岗位信息分析匹配度。首轮必须先调用 get_resume 读取结构，再调用 present_jd_match 输出匹配卡片（匹配度评分 / 已命中关键词 / 缺失或弱体现关键词 / 可落地的修改建议）。",
-        "匹配卡片会作为右侧常驻面板贯穿整个会话，因此每条建议都必须同时提供 prompt（用户一键应用时发给你的具体指令）与 targetIds（该建议涉及的简历元素/行/模块 id，使用 get_resume 大纲中的纯 id 或 module#/row#/element# 带前缀写法均可），以便用户点击「定位」滚动高亮、点击「让 AI 应用」直接落地。",
-        "用户确认后再用 update_element_text 等工具落地修改。",
+        "匹配卡片会作为右侧常驻面板贯穿整个会话，因此每条建议都必须同时提供 prompt（用户一键应用时发给你的具体指令）与 targetIds（该建议涉及的 id：模块/行/元素用 get_resume 中的 mod-/row-/el- id；求职意向用 jobIntention；个人信息用 personal；标题用 title），以便用户点击「定位」滚动高亮、点击「让 AI 应用」直接落地。",
+        "用户确认后再落地修改：模块/行/元素内文本用 update_element_text；简历标题用 update_title；个人信息用 set_personal_info；求职意向用 set_job_intention（求职意向不是 element，get_resume 里不会出现 element#）。",
         "调用 present_jd_match 之后，不要复述卡片里已有的内容（分数、关键词清单、建议条目都已在匹配面板中展示），也不要描述卡片在界面的位置。最多用 1-2 句话点出最关键的差距和建议优先做的一件事即可，保持简洁。",
         "当被要求「重新评估匹配度」时：只调用 present_jd_match，基于当前最新简历给出真实分数，不要顺带做其它修改，也不要输出多余文字。匹配度应如实反映简历改进——若已补齐缺失关键词或强化了相关经历，分数应相应提高。",
       ].join("\n"),

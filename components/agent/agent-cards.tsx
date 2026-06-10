@@ -20,23 +20,7 @@ import type {
   ToolStep,
 } from "@/lib/agent/types"
 
-import { normalizeResumeTargetId, normalizeResumeTargetIds } from "@/lib/resume-core"
-
-function attrValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-}
-
-function findPreviewTarget(id: string): Element | null {
-  if (typeof document === "undefined") return null
-  const root = document.querySelector(".rw-preview") || document
-  const value = attrValue(normalizeResumeTargetId(id))
-  const element = root.querySelector(`[data-element-id="${value}"]`)
-  if (element) return element
-  const row = root.querySelector(`[data-row-id="${value}"]`)
-  if (row) return row
-  const module = root.querySelector(`[data-module-id="${value}"]`)
-  return module?.querySelector('[data-role="module-title"]') || module
-}
+import { findPreviewTarget, resolveResumeTargetIds } from "@/lib/resume-core"
 
 /** 滚动并高亮简历预览中的目标元素（依赖预览的 data-* 属性） */
 function locateInPreview(ids: string[]): boolean {
@@ -342,12 +326,11 @@ export function DiscoverCard({ card }: { card: DiscoverCardType }) {
 
 export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: string) => void }) {
   const ws = useResumeWorkspace()
-  const locate = (ids: string[]) => {
-    const normalizedIds = normalizeResumeTargetIds(ids)
-    if (!normalizedIds.length) return
-    ws.setHighlight([])
-    window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
-    locateInPreview(normalizedIds)
+  const locate = (ids: string[], section?: string) => {
+    const resolvedIds = resolveResumeTargetIds(ws.resumeData, ids, section)
+    if (!resolvedIds.length) return
+    ws.flashHighlight(resolvedIds)
+    locateInPreview(resolvedIds)
   }
   return (
     <div className="analysis-card">
@@ -398,12 +381,12 @@ export function JdCard({ card, onApply }: { card: JdCardType; onApply: (prompt: 
                 <div className="text-xs font-medium">{s.section}</div>
                 <p className="mt-0.5 text-xs text-muted-foreground">{s.advice}</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {s.targetIds?.length ? (
+                  {s.targetIds?.length || s.section ? (
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-6 gap-1 bg-transparent text-[11px]"
-                      onClick={() => locate(s.targetIds as string[])}
+                      onClick={() => locate(s.targetIds || [], s.section)}
                     >
                       <Icon icon="mdi:crosshairs-gps" className="h-3 w-3" /> 定位
                     </Button>
@@ -520,15 +503,15 @@ export function JdMatchPanel({
   const totalSug = activeSuggestions.length
   const doneSug = activeSuggestions.filter((s) => s.status === "applied").length
 
-  const locate = (ids: string[]) => {
-    const normalizedIds = normalizeResumeTargetIds(ids)
-    if (!normalizedIds.length) return
-    ws.setHighlight([])
-    window.setTimeout(() => ws.setHighlight(normalizedIds), 0)
-    locateInPreview(normalizedIds)
+  const locate = (ids: string[], section?: string) => {
+    const resolvedIds = resolveResumeTargetIds(ws.resumeData, ids, section)
+    if (!resolvedIds.length) return
+    ws.flashHighlight(resolvedIds)
+    locateInPreview(resolvedIds)
   }
 
   const apply = (s: JdSuggestion) => {
+    if (s.targetIds?.length || s.section) locate(s.targetIds || [], s.section)
     if (s.prompt) onApply(s.prompt)
     if (s.id) ws.setSuggestionStatus(s.id, "applied")
   }
@@ -616,10 +599,10 @@ export function JdMatchPanel({
                       <p className="jd-sug-advice">{s.advice}</p>
                     </div>
                     <div className="jd-sug-actions">
-                      {s.targetIds?.length ? (
+                      {s.targetIds?.length || s.section ? (
                         <button
                           className="jd-icon-btn"
-                          onClick={() => locate(s.targetIds as string[])}
+                          onClick={() => locate(s.targetIds || [], s.section)}
                           title="定位到简历"
                         >
                           <Icon icon="mdi:crosshairs-gps" className="h-3.5 w-3.5" />

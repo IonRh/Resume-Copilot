@@ -1512,15 +1512,26 @@
 @keyframes rp-highlight-pulse {
   0% {
     background-color: color-mix(in oklab, var(--brand-to) 32%, transparent);
+    outline-color: var(--brand-via);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-via) 40%, transparent);
+  }
+  30% {
+    background-color: color-mix(in oklab, var(--brand-to) 22%, transparent);
+    outline-color: var(--brand-via);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-via) 30%, transparent);
   }
   100% {
     background-color: transparent;
+    outline-color: transparent;
+    box-shadow: none;
   }
 }
 
 .rp-highlight {
-  animation: rp-highlight-pulse 1.8s ease-out;
+  animation: rp-highlight-pulse 2s ease-out forwards;
   border-radius: 4px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 /* 选中元素旁的 AI 优化浮标 */

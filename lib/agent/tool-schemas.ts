@@ -352,7 +352,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     type: "function",
     function: {
       name: "set_job_intention",
-      description: "设置求职意向（是否启用及其条目）。",
+      description: "设置求职意向（是否启用及其条目）。求职意向是独立区域，不是 module/element；修改意向文本、毕业时间等必须用本工具，不要用 update_element_text。",
       parameters: {
         type: "object",
         properties: {
@@ -823,6 +823,9 @@ export const JD_TOOL_SCHEMAS = pickTools([
   "get_resume",
   "present_jd_match",
   "update_element_text",
+  "update_title",
+  "set_personal_info",
+  "set_job_intention",
   "update_module",
   "add_row",
   "add_rows",

@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react"
 import type { ResumeData } from "@/types/resume"
+import { normalizeResumeTargetIds } from "@/lib/resume-core"
 import type {
   AgentCard,
   AgentMode,
@@ -71,6 +72,8 @@ function mergeJdMatch(prev: JdMatchState | null, card: JdCard): JdMatchState {
 
 const HISTORY_LIMIT = 50
 const MANUAL_COALESCE_MS = 1000
+/** 定位高亮持续时间（毫秒） */
+export const RESUME_HIGHLIGHT_MS = 2000
 
 interface WorkspaceState {
   resumeData: ResumeData
@@ -358,7 +361,7 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
         past,
         future: isResumeChange ? [] : state.future,
         lastSource: isResumeChange ? "agent" : state.lastSource,
-        highlightedIds: item.change.targetIds,
+        highlightedIds: normalizeResumeTargetIds(item.change.targetIds),
       }
     }
 
@@ -394,7 +397,7 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
         past,
         future: resumePending.length ? [] : state.future,
         lastSource: resumePending.length ? "agent" : state.lastSource,
-        highlightedIds: highlight,
+        highlightedIds: normalizeResumeTargetIds(highlight),
       }
     }
 
@@ -405,7 +408,7 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       }))
 
     case "SET_HIGHLIGHT":
-      return { ...state, highlightedIds: action.ids }
+      return { ...state, highlightedIds: normalizeResumeTargetIds(action.ids) }
 
     case "ADD_TURN":
       return mapActiveSession(state, (session) => ({ ...session, turns: [...session.turns, action.turn] }))
@@ -513,6 +516,8 @@ export interface WorkspaceContextValue {
   getStaged: (id: string) => StagedChange | undefined
 
   setHighlight: (ids: string[]) => void
+  /** 短暂高亮目标区域，约 2s 后自动清除（用于「定位」） */
+  flashHighlight: (ids: string[]) => void
 
   addTurn: (turn: AgentTurn) => void
   updateTurn: (id: string, updater: (turn: AgentTurn) => AgentTurn) => void
@@ -543,6 +548,7 @@ export function ResumeWorkspaceProvider({
   children: ReactNode
 }) {
   const initialSession = useMemo(() => createSession("edit"), [])
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     resumeData: initialData,
     past: [],
@@ -634,6 +640,13 @@ export function ResumeWorkspaceProvider({
     return () => window.clearTimeout(timer)
   }, [state.sessions, state.activeSessionId, state.jd, state.jdMatch, state.hydrated, storageKey])
 
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    },
+    [],
+  )
+
   const cb = {
     updateResume: useCallback((updates: Partial<ResumeData>) => dispatch({ type: "UPDATE_RESUME", updates }), []),
     setInitial: useCallback((data: ResumeData) => dispatch({ type: "SET_INITIAL", data }), []),
@@ -648,6 +661,22 @@ export function ResumeWorkspaceProvider({
     acceptAll: useCallback(() => dispatch({ type: "ACCEPT_ALL" }), []),
     rejectAll: useCallback(() => dispatch({ type: "REJECT_ALL" }), []),
     setHighlight: useCallback((ids: string[]) => dispatch({ type: "SET_HIGHLIGHT", ids }), []),
+    flashHighlight: useCallback((ids: string[]) => {
+      const normalized = normalizeResumeTargetIds(ids)
+      if (!normalized.length) return
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+        highlightTimerRef.current = null
+      }
+      dispatch({ type: "SET_HIGHLIGHT", ids: [] })
+      window.setTimeout(() => {
+        dispatch({ type: "SET_HIGHLIGHT", ids: normalized })
+        highlightTimerRef.current = window.setTimeout(() => {
+          dispatch({ type: "SET_HIGHLIGHT", ids: [] })
+          highlightTimerRef.current = null
+        }, RESUME_HIGHLIGHT_MS)
+      }, 0)
+    }, []),
     addTurn: useCallback((turn: AgentTurn) => dispatch({ type: "ADD_TURN", turn }), []),
     updateTurn: useCallback(
       (id: string, updater: (turn: AgentTurn) => AgentTurn) => dispatch({ type: "UPDATE_TURN", id, updater }),
