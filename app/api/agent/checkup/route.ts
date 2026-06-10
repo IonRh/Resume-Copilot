@@ -7,48 +7,11 @@ import {
   type CheckupDimension,
 } from "@/lib/agent/checkup"
 import { loadAiProviderConfig } from "@/lib/server/ai-config"
+import { callChatCompletions } from "@/lib/server/chat-completions"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
-
-function resolveEndpoint(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, "")
-  return `${trimmed}/chat/completions`
-}
-
-async function callChatCompletions(
-  baseUrl: string,
-  apiKey: string,
-  payload: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<Response> {
-  const endpoint = resolveEndpoint(baseUrl)
-  const headers = {
-    "content-type": "application/json",
-    authorization: `Bearer ${apiKey}`,
-  }
-
-  const withJsonMode = { ...payload, response_format: { type: "json_object" } }
-  let upstream = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(withJsonMode),
-    signal,
-  })
-
-  if (upstream.status === 400) {
-    await upstream.text().catch(() => "")
-    upstream = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal,
-    })
-  }
-
-  return upstream
-}
 
 function extractJson(text: string): unknown {
   const trimmed = text.trim()
@@ -174,7 +137,8 @@ export async function POST(req: Request) {
         "3. strengths 列出 2-4 条简历真实亮点（无明显亮点可给空数组）。",
         "4. 问题要具体、可落地，按优先级排序，优先指出影响求职成功率的问题；issues 尽量覆盖内容完整性、岗位匹配、量化成果、表达清晰度、结构顺序、冗余、样式一致性、联系方式等维度。",
         "5. 每条 issue 的 prompt 要能直接发给简历编辑 Agent 执行；若需要用户补充事实，就让 Agent 先询问再修改。",
-        "6. 返回 JSON 形状：{\"summary\":\"一句话总评\",\"overallScore\":0-100,\"dimensions\":[{\"name\":\"内容完整性\",\"score\":0-100,\"comment\":\"一句点评\"}],\"strengths\":[\"亮点\"],\"issues\":[{\"id\":\"短id\",\"priority\":\"high|medium|low\",\"category\":\"类别\",\"title\":\"短标题\",\"summary\":\"一句话摘要\",\"detail\":\"完整问题说明\",\"evidence\":\"简历中的证据或位置\",\"suggestion\":\"建议怎么改\",\"prompt\":\"点击让 AI 执行时发送的中文指令\"}]}",
+        "6. 简历页面结构分两层：① 头部固定区（标题 → 求职意向头部区 jobIntention → 个人信息 personal），已在预览顶部，不属于 modules；② 正文模块列表（教育/实习/项目/技能等），才用模块索引 [0][1]… 描述。勿把正文里标题含「求职意向」的模块误认为页面顶部的求职意向位置；若头部已有求职意向且正文有同名冗余模块，应建议删除冗余模块，而非建议 reorder_modules 上移。",
+        "7. 返回 JSON 形状：{\"summary\":\"一句话总评\",\"overallScore\":0-100,\"dimensions\":[{\"name\":\"内容完整性\",\"score\":0-100,\"comment\":\"一句点评\"}],\"strengths\":[\"亮点\"],\"issues\":[{\"id\":\"短id\",\"priority\":\"high|medium|low\",\"category\":\"类别\",\"title\":\"短标题\",\"summary\":\"一句话摘要\",\"detail\":\"完整问题说明\",\"evidence\":\"简历中的证据或位置\",\"suggestion\":\"建议怎么改\",\"prompt\":\"点击让 AI 执行时发送的中文指令\"}]}",
       ].join("\n"),
     },
     {

@@ -1,6 +1,7 @@
 import type { ResumeData } from "@/types/resume"
 import { assertResumeApiAuthorized, unauthorizedResponse } from "@/lib/server/api-auth"
 import { loadAiProviderConfig } from "@/lib/server/ai-config"
+import { callChatCompletions } from "@/lib/server/chat-completions"
 import { buildResumeOutline } from "@/lib/agent/changeset"
 import { getStatusMeta, type ApplicationStatus } from "@/types/application"
 
@@ -31,10 +32,6 @@ export interface ApplicationAssistResult {
   followUpMessage: string
   interviewTopics: string[]
   generatedAt: string
-}
-
-function resolveEndpoint(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}/chat/completions`
 }
 
 function extractJson(text: string): unknown {
@@ -137,19 +134,18 @@ export async function POST(req: Request) {
 
   let upstream: Response
   try {
-    upstream = await fetch(resolveEndpoint(baseUrl), {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
+    upstream = await callChatCompletions(
+      baseUrl,
+      apiKey,
+      {
         model,
         messages,
         stream: false,
         temperature: 0.35,
         max_tokens: 1600,
-        response_format: { type: "json_object" },
-      }),
-      signal: req.signal,
-    })
+      },
+      req.signal,
+    )
   } catch (err) {
     return Response.json({ error: `无法连接模型服务：${err instanceof Error ? err.message : String(err)}` }, { status: 502 })
   }

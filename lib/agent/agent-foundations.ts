@@ -16,6 +16,7 @@ const EDIT_DIFF = [
 const EDIT_TOOLS = [
   "元素通过 id 定位；不确定 id 或当前内容时，先调用 get_resume 获取结构大纲。",
   "简历 id 统一为 mod-/row-/el- 前缀加时间戳（如 mod-lxyz-abc）；get_resume 大纲用 module#/row#/element# 展示，调用工具时传纯 id 或带前缀均可。",
+  "页面布局：标题 → 求职意向头部区(target#jobIntention) → 个人信息 → 正文模块列表。头部求职意向不是 modules 项；仅「正文模块」可 reorder_modules。",
   "改写措辞优先用 update_element_text（仅适用于 module#/row#/element# 有 id 的正文）；简历标题用 update_title，个人信息用 set_personal_info，求职意向用 set_job_intention——这三块不是 element，get_resume 大纲里不会出现 element#。",
   "结构调整用 add/remove/reorder 等；版面样式用 set_layout / set_theme_color。",
   "每次准备调用工具前，先用一句简短中文说明你将查看/分析/准备什么；不要把「只有工具调用、没有任何文字」作为常规回复。",

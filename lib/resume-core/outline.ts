@@ -52,20 +52,26 @@ function getElementStyleLabel(content?: JSONContent | null): string {
   return ` style{${parts.join(", ")}}`
 }
 
+const JOB_INTENTION_MODULE_HINT = /求职意向|求职方向|目标岗位|意向岗位/
+
 export function buildResumeOutline(data: ResumeData): string {
   const lines: string[] = []
+  lines.push("【页面布局顺序（自上而下，与预览一致）】")
+  lines.push("1. 简历标题 → 2. 求职意向头部区（固定于标题下，非正文模块）→ 3. 个人信息 → 4. 正文模块列表")
+  lines.push("说明：仅「正文模块」可用 reorder_modules 调整顺序；头部求职意向用 set_job_intention，不属于 modules 数组。")
   lines.push(`简历标题(target#title，用 update_title 修改): "${data.title}"${data.centerTitle ? "（居中）" : "（左对齐）"}`)
   if (data.themeColor) lines.push(`主题色: ${data.themeColor}`)
   lines.push(DEFAULT_RENDER_STYLE)
 
   const jobIntention = data.jobIntentionSection
-  if (jobIntention?.enabled && jobIntention.items?.length) {
-    const items = sortedByOrder(jobIntention.items)
+  const headerJobIntentionEnabled = Boolean(jobIntention?.enabled && jobIntention.items?.length)
+  if (headerJobIntentionEnabled) {
+    const items = sortedByOrder(jobIntention!.items!)
       .map((item) =>
         `${item.label}=${item.type === "salary" ? `${item.salaryRange?.min ?? ""}-${item.salaryRange?.max ?? ""}` : item.value}`,
       )
       .join(", ")
-    lines.push(`求职意向(target#jobIntention，用 set_job_intention 修改，无 element#): ${items}`)
+    lines.push(`求职意向头部区(target#jobIntention，已在页面顶部，用 set_job_intention 修改，无 element#): ${items}`)
   }
 
   const personalInfo = data.personalInfoSection
@@ -76,7 +82,22 @@ export function buildResumeOutline(data: ResumeData): string {
     lines.push(`个人信息(target#personal，用 set_personal_info 修改，无 element#；${personalInfo.layout?.mode}/${personalInfo.layout?.itemsPerRow ?? 2}列): ${items}`)
   }
 
-  lines.push("模块:")
+  const duplicateJobIntentionModules = sortedByOrder(data.modules).filter((module) =>
+    JOB_INTENTION_MODULE_HINT.test(module.title),
+  )
+  if (headerJobIntentionEnabled && duplicateJobIntentionModules.length) {
+    const orderedModules = sortedByOrder(data.modules)
+    lines.push(
+      `⚠ 结构提示：头部已有求职意向区，正文模块中仍有同名/近义模块（${duplicateJobIntentionModules
+        .map((module) => {
+          const index = orderedModules.findIndex((item) => item.id === module.id)
+          return `[${index}] module#${module.id}「${module.title}」`
+        })
+        .join("、")}）。预览中求职意向已在顶部，通常应删除冗余正文模块，而非将其上移。`,
+    )
+  }
+
+  lines.push("正文模块（仅此列表属于 modules，可 reorder_modules）:")
   sortedByOrder(data.modules).forEach((module, moduleIndex) => {
     lines.push(`  [${moduleIndex}] module#${module.id} 标题="${module.title}" (${module.rows.length}行)`)
     sortedByOrder(module.rows).forEach((row) => {

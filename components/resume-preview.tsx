@@ -31,7 +31,6 @@ export default function ResumePreview({
   selectedId = null,
   highlightedIds = [],
   onSelect,
-  onRequestAI,
 }: ResumePreviewProps) {
   const isAsciiOnly = (str: string | undefined) => !!str && /^[\x00-\x7F]+$/.test(str);
 
@@ -52,19 +51,21 @@ export default function ResumePreview({
     e.stopPropagation();
     onSelect?.(selectedId === selection.id ? null : selection);
   };
-  const AiFloat = ({ selection }: { selection: WorkspaceSelection }) =>
-    interactive && onRequestAI && selectedId === selection.id ? (
-      <button
-        type="button"
-        className="rp-ai-pop no-print brand-gradient-bg inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shadow-md"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRequestAI?.(selection);
-        }}
+  const SelectionBubble = ({ selection }: { selection: WorkspaceSelection }) => {
+    if (!interactive || selectedId !== selection.id) return null
+    return (
+      <div
+        className="rp-selection-bubble no-print"
+        role="status"
+        onClick={(e) => e.stopPropagation()}
       >
-        <Icon icon="mdi:auto-fix" className="h-3 w-3" /> 用 AI 优化
-      </button>
-    ) : null;
+        <div className="rp-selection-bubble-label">
+          <Icon icon="mdi:cursor-default-click" className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{selection.label}</span>
+        </div>
+      </div>
+    )
+  }
 
   const themeColor = resumeData.themeColor;
   const leftRef = useRef<HTMLDivElement | null>(null);
@@ -319,8 +320,10 @@ export default function ResumePreview({
             ref={titleRef}
             data-target-id="title"
             className={`resume-title text-2xl font-bold text-foreground ${shouldStretchPersonalInfo ? 'mb-0' : 'mb-4'} ${resumeData.centerTitle ? 'text-center' : ''} ${selClass("title")}`}
+            onClick={(e) => pick(e, { kind: "title", id: "title", label: "简历标题", text: resumeData.title })}
           >
             {resumeData.title || "简历标题"}
+            <SelectionBubble selection={{ kind: "title", id: "title", label: "简历标题", text: resumeData.title }} />
           </h1>
 
           {/* 求职意向 */}
@@ -330,12 +333,28 @@ export default function ResumePreview({
               data-target-id="jobIntention"
               className={`job-intention-line text-sm text-muted-foreground mb-3 ${resumeData.centerTitle ? 'text-center' : ''} ${selClass("jobIntention")}`}
               style={jobIntentionWrapStyle}
+              onClick={(e) =>
+                pick(e, {
+                  kind: "jobIntention",
+                  id: "jobIntention",
+                  label: "求职意向",
+                  text: jobIntentionText,
+                })
+              }
             >
               <span ref={jobIntentionBadgeRef} style={jobIntentionBadgeStyle}>
                 <span ref={jobIntentionTextRef} style={jobIntentionTextStyle}>
                   {jobIntentionText}
                 </span>
               </span>
+              <SelectionBubble
+                selection={{
+                  kind: "jobIntention",
+                  id: "jobIntention",
+                  label: "求职意向",
+                  text: jobIntentionText,
+                }}
+              />
             </div>
           )}
 
@@ -346,6 +365,14 @@ export default function ResumePreview({
                 data-target-id="personal"
                 className={`personal-info personal-info-row flex items-center justify-between w-full whitespace-nowrap ${selClass("personal")}`}
                 style={{ backgroundColor: '#F5F6F8', padding: '8px 12px', borderRadius: '4px' }}
+                onClick={(e) =>
+                  pick(e, {
+                    kind: "personal",
+                    id: "personal",
+                    label: "个人信息",
+                    text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                  })
+                }
               >
                 {personalInfo.map((item) => (
                   <div
@@ -377,12 +404,28 @@ export default function ResumePreview({
                     )}
                   </div>
                 ))}
+                <SelectionBubble
+                  selection={{
+                    kind: "personal",
+                    id: "personal",
+                    label: "个人信息",
+                    text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                  }}
+                />
               </div>
             ) : (
               <div
                 data-target-id="personal"
                 className={`personal-info-stretch-wrapper w-full ${selClass("personal")}`}
                 style={shouldStretchPersonalInfo ? { minHeight: 0 } : undefined}
+                onClick={(e) =>
+                  pick(e, {
+                    kind: "personal",
+                    id: "personal",
+                    label: "个人信息",
+                    text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                  })
+                }
               >
                 <div
                   ref={personalGridRef}
@@ -432,6 +475,14 @@ export default function ResumePreview({
                     </div>
                   ))}
                 </div>
+                <SelectionBubble
+                  selection={{
+                    kind: "personal",
+                    id: "personal",
+                    label: "个人信息",
+                    text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                  }}
+                />
               </div>
             )
           ) : isInline ? (
@@ -439,6 +490,14 @@ export default function ResumePreview({
               data-target-id="personal"
               className={`personal-info flex items-center justify-between w-full whitespace-nowrap ${selClass("personal")}`}
               style={{ backgroundColor: '#F5F6F8', padding: '8px 12px', borderRadius: '4px' }}
+              onClick={(e) =>
+                pick(e, {
+                  kind: "personal",
+                  id: "personal",
+                  label: "个人信息",
+                  text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                })
+              }
             >
               {personalInfo.map((item) => (
                 <div
@@ -470,13 +529,28 @@ export default function ResumePreview({
                   )}
                 </div>
               ))}
+              <SelectionBubble
+                selection={{
+                  kind: "personal",
+                  id: "personal",
+                  label: "个人信息",
+                  text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+                }}
+              />
             </div>
           ) : (
             (() => {
+              const personalSelection: WorkspaceSelection = {
+                kind: "personal",
+                id: "personal",
+                label: "个人信息",
+                text: personalInfo.map((item) => `${item.label}:${item.value.content}`).join(" "),
+              }
               return (
                 <div
                   data-target-id="personal"
                   className={`personal-info personal-info-grid ${selClass("personal")}`}
+                  onClick={(e) => pick(e, personalSelection)}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: `repeat(${itemsPerRow}, max-content)`,
@@ -518,6 +592,7 @@ export default function ResumePreview({
                       )}
                     </div>
                   ))}
+                  <SelectionBubble selection={personalSelection} />
                 </div>
               );
             })()
@@ -560,7 +635,7 @@ export default function ResumePreview({
                   />
                 )}
                 {module.title}
-                <AiFloat selection={{ kind: "module", id: module.id, label: `模块「${module.title}」` }} />
+                <SelectionBubble selection={{ kind: "module", id: module.id, label: `模块「${module.title}」` }} />
               </div>
 
               <div className="space-y-[0.3em]">
@@ -579,48 +654,57 @@ export default function ResumePreview({
                             {tag}
                           </span>
                         ))}
-                        <AiFloat selection={{ kind: "row", id: row.id, moduleId: module.id, label: `「${module.title}」· 标签`, text: (row.tags || []).join("、") }} />
+                        <SelectionBubble selection={{ kind: "row", id: row.id, moduleId: module.id, label: `「${module.title}」· 标签`, text: (row.tags || []).join("、") }} />
                       </div>
                     ) : (
-                      <div
-                        key={row.id}
-                        data-row-id={row.id}
-                        className={`grid gap-3 items-center ${selClass(row.id)}`}
-                        style={{
-                          gridTemplateColumns: `repeat(${row.columns}, 1fr)`,
-                        }}
-                        onClick={(e) =>
-                          pick(e, {
+                      <div key={row.id} className="relative" data-row-id={row.id}>
+                        <div
+                          className={`grid gap-3 items-center ${selClass(row.id)}`}
+                          style={{
+                            gridTemplateColumns: `repeat(${row.columns}, 1fr)`,
+                          }}
+                          onClick={(e) =>
+                            pick(e, {
+                              kind: "row",
+                              id: row.id,
+                              moduleId: module.id,
+                              label: `「${module.title}」· 第${rowIdx + 1}行`,
+                              text: row.elements.map((element) => docToText(element.content)).join("\n"),
+                            })
+                          }
+                        >
+                          {row.elements.map((element) => {
+                            const label = `「${module.title}」· 第${rowIdx + 1}行 · 第${element.columnIndex + 1}列`
+                            const selection: WorkspaceSelection = {
+                              kind: "element",
+                              id: element.id,
+                              moduleId: module.id,
+                              rowId: row.id,
+                              label,
+                              text: docToText(element.content),
+                            }
+                            return (
+                              <div
+                                key={element.id}
+                                data-element-id={element.id}
+                                className={`text-sm text-foreground ${selClass(element.id)}`}
+                                onClick={(e) => pick(e, selection)}
+                              >
+                                <RichTextRenderer content={element.content} />
+                                <SelectionBubble selection={selection} />
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <SelectionBubble
+                          selection={{
                             kind: "row",
                             id: row.id,
                             moduleId: module.id,
                             label: `「${module.title}」· 第${rowIdx + 1}行`,
                             text: row.elements.map((element) => docToText(element.content)).join("\n"),
-                          })
-                        }
-                      >
-                        {row.elements.map((element) => {
-                          const label = `「${module.title}」· 第${rowIdx + 1}行 · 第${element.columnIndex + 1}列`
-                          const selection: WorkspaceSelection = {
-                            kind: "element",
-                            id: element.id,
-                            moduleId: module.id,
-                            rowId: row.id,
-                            label,
-                            text: docToText(element.content),
-                          }
-                          return (
-                            <div
-                              key={element.id}
-                              data-element-id={element.id}
-                              className={`text-sm text-foreground ${selClass(element.id)}`}
-                              onClick={(e) => pick(e, selection)}
-                            >
-                              <RichTextRenderer content={element.content} />
-                              <AiFloat selection={selection} />
-                            </div>
-                          )
-                        })}
+                          }}
+                        />
                       </div>
                     )
                   ))}

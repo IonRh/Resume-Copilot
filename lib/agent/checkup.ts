@@ -141,7 +141,26 @@ export function runCheckup(data: ResumeData): CheckupIssue[] {
     })
   }
 
-  // 6. 篇幅过长（粗略：正文字符数）
+  // 6. 头部求职意向与正文模块重复
+  const headerJobIntentionEnabled = Boolean(
+    data.jobIntentionSection?.enabled && data.jobIntentionSection.items?.length,
+  )
+  const duplicateJobIntentionModules = data.modules.filter((module) => /求职意向|求职方向|目标岗位|意向岗位/.test(module.title))
+  if (headerJobIntentionEnabled && duplicateJobIntentionModules.length) {
+    issues.push({
+      id: "duplicate-job-intention",
+      level: "info",
+      title: "求职意向区域重复",
+      detail: `页面顶部已有求职意向头部区，正文模块「${duplicateJobIntentionModules
+        .map((module) => module.title)
+        .join("、")}」属于冗余，预览中求职意向并不在底部。`,
+      prompt: `我的简历顶部已有求职意向头部区，请删除正文模块中的冗余「${duplicateJobIntentionModules
+        .map((module) => module.title)
+        .join("、")}」模块，不要尝试用 reorder_modules 把求职意向移到顶部。`,
+    })
+  }
+
+  // 7. 篇幅过长（粗略：正文字符数）
   const totalLen = allText.length + infoText.length
   if (totalLen > 2200) {
     issues.push({
