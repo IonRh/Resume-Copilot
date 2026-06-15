@@ -25,9 +25,9 @@ export default function WelcomePage() {
                 AI Native · 大学生求职全流程
               </div>
               <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">
-                <span className="brand-gradient-text">AI + 求职</span>
-                <span className="text-foreground"> 简历工作区</span>
+                <span className="brand-gradient-text">智简Copilot</span>
               </h1>
+              <p className="mt-2 text-sm text-muted-foreground sm:text-base">大学生求职全流程</p>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
                 左侧手工编辑、中间实时预览，右上角呼出 AI Agent 即进入三分屏工作区。
                 Agent 可润色改写、调整结构与样式、对照 JD 优化、给出评分诊断与模拟面试，所有改动均以 diff 卡片确认后落地。

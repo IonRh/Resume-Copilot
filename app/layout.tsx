@@ -19,9 +19,9 @@ const notoSansSC = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "简历生成器",
-  description: "在线简历编辑与生成工具",
-  generator: "Jianli Resume Workspace",
+  title: "智简Copilot",
+  description: "AI 驱动的求职准备平台：简历、JD 匹配、模拟面试与投递管理",
+  generator: "智简Copilot",
 };
 
 export default function RootLayout({

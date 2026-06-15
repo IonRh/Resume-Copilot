@@ -1,244 +1,211 @@
-﻿# 简历生成器
+﻿# 智简Copilot
 
-一个面向 AI-Native 简历工作流的在线编辑、管理和导出工具。系统以自研 `resume-core` 作为基础简历能力内核，对外保持稳定的 `ResumeData`、存储 API 与 Agent 工具接口，内部统一负责数据规范化、富文本转换、结构操作、校验与 AI 大纲生成。
+面向大学生与青年求职者的 **AI-Native 求职准备平台**。把简历编辑、岗位定制、自荐信、投递跟进、模拟面试与复盘报告串成一条连续工作流——不是「聊天改几句」，而是 **结构化简历 + 可确认 diff + 可导出成品**。
 
-## 功能特点
+> 基于 [wzdnzd/resume](https://github.com/wzdnzd/resume)（MIT）二次开发，保留原项目的编辑与导出能力，并扩展 AI Agent、投递与面试模块。
 
-- **用户中心**: 首页集中管理你的简历，支持检索、排序、批量选择与删除
-- **后台存储**: 多份简历由服务端 API 统一读写，数据维护不暴露给用户
-- **简历编辑**: 直观的界面，轻松编辑个人信息和简历内容
-- **模块化设计**: 支持添加、删除和重排简历模块，底层由自研内核统一维护 order、id 与行列结构
-- **实时预览**: 即时查看简历编辑效果
-- **PDF 导出**: 优先由服务端 Chromium 渲染同一份 HTML/CSS 生成干净 PDF；不可用时自动降级浏览器打印，并给出引导
-- **图片导出**: 支持导出为 PNG、JPG、WEBP、SVG 等图片格式
-- **富文本支持**: 支持自由设置文本格式，如字体、文字大小、颜色、对齐方式以及是否加粗、URL 链接等
-- **自适应**: 支持不同模块/布局自由组合，自动调整元素尺寸
-- **AI 兼容内核**: 保持 Agent tool schema 和 API 响应不变，内部重构不影响 AI 正常运行
+---
 
-## 页面示例截图
-1. 用户中心：后台集中管理多份简历
-![用户中心](./docs/user-center.png)
+## 核心能力
 
-1. 编辑和预览：随时查看渲染效果
-![编辑和预览界面](./docs/edit-preview.png)
+### 简历与编辑
 
-1. 仅编辑：专注于编写
-![仅编辑](./docs/edit-only.png)
+- **模块化简历**：个人信息、求职意向、教育/实习/项目/技能等模块，支持拖拽排序、富文本、标签与多种布局
+- **实时预览**：左编右看（或三分屏），预览与 PDF 导出共用同一套 HTML/CSS
+- **多版本管理**：基础简历 + 岗位定制版，记录母版与衍生关系
+- **图片导入**：从简历截图还原可编辑结构（Agent 辅助修正）
+- **导出**：PDF（服务端 Chromium 优先，失败自动降级浏览器打印）、PNG / JPG / WEBP / SVG
 
-1. 仅预览：简历效果一览无余
-![仅预览](./docs/preview-only.png)
+### AI Agent 工作区
 
-1. 自由布局：左对齐/居中对齐、列数调整等多个选项随心控制
-![自由布局](./docs/multi-line.png)
+右侧 Agent 读取结构化简历大纲，修改以 **diff 卡片** 呈现，确认后才写入正文。
 
-1. 多种导出方式：不同成品满足不同需求
-![导出方式](./docs/export.png)
+| 模式 | 说明 |
+|------|------|
+| 创建助手 | 对话式从零搭建简历 |
+| 编辑 / 校对 / 排版 / 量化 STAR | 润色、纠错、美化、补数据与 STAR 结构 |
+| 体检诊断 | 本地规则 + AI 五维评分与可执行修复建议 |
+| JD 匹配 | 常驻匹配面板：分数、关键词、定位高亮、一键应用 |
+| 岗位方向推荐 | Holland 测验 + 方向探索 |
+| 自荐信 | 基于简历与 JD 生成信件并导出 |
+| 模拟面试 | 研究公司 → 规划题目 → 逐题追问（支持语音回答） |
+| 面试分析 | 旁路教练：每轮回答生成分析卡片，可点开详情并追问 |
 
-1. 标签功能：为企业或项目等添加标签，让HR/面试官快速理解你
-![标签添加](./docs/tags.png)
+### 求职流程
+
+- **求职管家 Copilot**：根据简历、投递、面试状态推荐下一步行动
+- **投递看板**：公司、岗位、阶段、优先级、跟进时间与 AI 阶段建议
+- **模拟面试大厅**：练手模式 / 真实模拟（可触发挂面试）、多轮会话与交接
+- **面试报告大厅**：结构化复盘、能力雷达、逐题点评
+
+---
 
 ## 技术栈
 
-- **前端框架**: Next.js
-- **UI组件**: Shadcn UI
-- **样式**: Tailwind CSS
-- **PDF生成**: puppeteer-core + @sparticuz/chromium（Serverless 友好）
-- **图标**: Iconify
+| 层级 | 选型 |
+|------|------|
+| 框架 | Next.js 16 · React 19 · TypeScript |
+| UI | Shadcn UI · Tailwind CSS · Iconify |
+| 富文本 | Tiptap |
+| 存储 | SQLite（简历、投递、面试等运行时数据） |
+| PDF | puppeteer-core + @sparticuz/chromium |
+| AI | OpenAI 兼容 Chat Completions + 工具调用 Agent |
+
+---
 
 ## 快速开始
 
-### 安装依赖
+### 环境要求
+
+- Node.js 18+
+- pnpm（推荐）
+
+### 安装与运行
 
 ```bash
-# 使用pnpm安装依赖
 pnpm install
-```
-
-### 开发环境运行
-
-```bash
 pnpm dev
 ```
 
-应用将在 [http://localhost:3000](http://localhost:3000) 启动。本地已默认集成 `puppeteer-core` 与 `@sparticuz/chromium`，服务端 PDF 可直接使用；当不可用时会自动降级为浏览器打印。
+浏览器访问 [http://localhost:3000](http://localhost:3000)。
 
-### 构建生产版本
+### 生产构建
 
 ```bash
 pnpm build
+pnpm start
 ```
 
-## 项目结构
-```
-/
-├── app/
-│  ├── globals.css
-│  ├── layout.tsx
-│  ├── page.tsx                         # 首页：用户中心（后台简历管理）
-│  ├── edit/
-│  │  ├── new/page.tsx                  # 新建简历（可选携带 ?clone=ID 预填）
-│  │  └── [id]/page.tsx                 # 编辑后台已保存的简历
-│  ├── view/[id]/page.tsx               # 仅预览后台已保存的简历
-│  ├── pdf/preview/[filename]/page.tsx  # 在线 PDF 预览页（服务端优先，自动降级打印）
-│  ├── print/page.tsx                   # 打印专用页面（供 Chromium 渲染）
-│  ├── auth/page.tsx                    # 访问口令输入页（可选）
-│  └── api/
-│     ├── auth/route.ts                 # 认证接口（设置 Cookie）
-│     ├── image-proxy/route.ts          # 远程图片代理（用于导出防跨域）
-│     ├── resumes/                      # 简历后台存储 API
-│     └── pdf/
-│        ├── health/route.ts            # 健康检查（尝试启动 headless 浏览器）
-│        ├── [filename]/route.ts        # 生成并缓存 PDF（POST→303→GET 下载/预览）
-│        └── route.ts                   # 直接生成并返回 PDF（Puppeteer + Chromium）
-├── components/
-│  ├── user-center.tsx                  # 用户中心（首页）
-│  ├── export-button.tsx                # 一键导出（PDF/图片）
-│  ├── resume-preview.tsx               # HTML 预览（PDF 与预览同源 HTML/CSS）
-│  ├── print-content.tsx                # 打印内容容器
-│  ├── pdf-viewer.tsx                   # 自动选择：服务端 PDF 或浏览器打印
-│  └── ui/…                             # Shadcn UI 基础组件集合
-├── hooks/
-│  ├── use-mobile.ts
-│  └── use-toast.ts
-├── lib/
-│  ├── resume-core/                     # 自研简历基础能力内核
-│  │  ├── document.ts                   # Tiptap 文档与纯文本/样式转换
-│  │  ├── factory.ts                    # 默认简历、模块、行、个人信息构建
-│  │  ├── normalize.ts                  # 数据规范化与校验
-│  │  ├── operations.ts                 # 不可变查找、更新、排序
-│  │  └── outline.ts                    # AI 可读简历大纲生成
-│  ├── server/resume-store.ts           # 服务端 SQLite 简历仓库
-│  ├── utils.ts                         # 通用工具
-│  └── storage.ts                       # 后台简历 API 客户端
-├── styles/
-│  ├── globals.css
-│  ├── print.css                        # 打印样式
-│  └── tiptap.css                       # 富文本编辑器样式
-├── data/
-│  ├── templates/                       # 服务端模板数据（不作为静态资源暴露）
-│  └── resumes.sqlite                   # 运行时简历数据（已 gitignore）
-├── public/
-│  ├── NotoSansSC-Medium.ttf            # 字体（预览/打印共用）
-│  └── …
-└── types/
-   └── resume.ts
+---
+
+## AI 与模型配置
+
+AI 功能需要配置 **OpenAI 兼容** 的 API。两种方式任选（或混用）：
+
+### 方式一：About 页面（推荐本地开发）
+
+访问 `/about`，在页面中填写并保存：
+
+- **主模型**：聊天 Agent、体检、JD 匹配等
+- **语音识别**：模拟面试语音转写（硅基流动 `/audio/transcriptions` 格式）
+- **公司调研**：intake 阶段联网调研公司与岗位（建议使用 Grok 等支持联网搜索的模型）
+
+配置写入 `data/ai-config.json`（已在 `.gitignore`，**不会进 Git**）。
+
+### 方式二：环境变量
+
+在项目根目录创建 `.env.local`：
+
+```env
+# 主模型（必填，否则 AI 功能不可用）
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+
+# 语音识别（可选，默认可回退到主模型 Key）
+SPEECH_BASE_URL=https://api.siliconflow.cn/v1
+SPEECH_API_KEY=
+SPEECH_MODEL=FunAudioLLM/SenseVoiceSmall
+
+# 公司调研（可选，默认可回退到主模型）
+RESEARCH_API_KEY=
+RESEARCH_BASE_URL=
+RESEARCH_MODEL=grok-3
 ```
 
-## 简历数据
+也可复制模板：`data/ai-config.example.json`（空对象，仅作占位说明）。
+
+**优先级**：About 页保存值 → 环境变量 → 代码内通用默认值（见 `lib/ai-config-defaults.ts`）。
+
+---
+
+## 其他环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `SITE_PASSWORD` | 设置后全站需口令访问（Cookie 30 天有效） |
+| `PUPPETEER_EXECUTABLE_PATH` / `CHROME_PATH` | 指定本机 Chrome，用于 PDF 渲染 |
+| `NEXT_PUBLIC_FORCE_SERVER_PDF` | 强制服务端 PDF |
+| `NEXT_PUBLIC_FORCE_PRINT` | 强制浏览器打印 |
+| `APP_GITHUB_URL` | About 页展示的仓库地址 |
+
+---
+
+## 项目结构（精简）
+
+```
+app/
+  page.tsx                 # 欢迎页
+  resumes/                 # 我的简历
+  edit/[id]/               # 编辑器（三分屏 + Agent）
+  career/[mode]/[id]/      # 职业工作区（JD / 面试 / 岗位推荐等）
+  applications/              # 投递看板
+  cover-letters/           # 自荐信
+  interviews/                # 模拟面试大厅与报告
+  about/                     # 模型配置与项目信息
+  api/                       # 简历、PDF、Agent、投递等 API
+
+components/
+  agent/                     # Agent 面板、卡片、Copilot、面试 UI
+  workspace/                 # Career 三分屏工作区
+
+lib/
+  resume-core/               # 简历数据规范化、大纲、结构操作
+  agent/                     # Prompt、工具、流式对话
+  server/                    # SQLite、AI 配置、PDF、报告生成
+
+data/                        # 运行时数据（gitignore，勿提交）
+  ai-config.json             # About 页保存的模型配置
+  resumes.sqlite             # 简历与业务数据
+```
+
+---
+
+## 简历数据模型
+
 ```typescript
-export interface ResumeData {
-  title: string;                     // 简历标题/姓名
-  centerTitle?: boolean;             // 标题是否居中
-  personalInfoSection: PersonalInfoSection; // 个人信息模块（支持 inline/grid）
-  jobIntentionSection?: JobIntentionSection; // 求职意向模块（可选）
-  modules: ResumeModule[];           // 其它模块（教育/经历/项目等）
-  avatar?: string;                   // 头像 URL（可为 data:URL）
-  createdAt: string;
-  updatedAt: string;
+interface ResumeData {
+  title: string
+  personalInfoSection: PersonalInfoSection
+  jobIntentionSection?: JobIntentionSection
+  modules: ResumeModule[]
+  avatar?: string
+  parentResumeId?: string      // 岗位定制版关联母简历
+  createdAt: string
+  updatedAt: string
 }
 ```
 
-## 功能说明
+`lib/resume-core` 负责规范化、排序、富文本转换与 AI 可读大纲，Agent 工具直接操作该结构。
 
-### 简历基础内核
+---
 
-- `lib/resume-core` 是简历数据和 AI 操作的基础能力层，不依赖页面组件实现。
-- 外部仍使用 `ResumeData`、`StoredResume`、`/api/resumes`、`/api/pdf` 与现有 Agent tool schema。
-- 存储写入时会统一规范化旧数据，修复 order、行列、个人信息布局和富文本空文档等结构问题。
-- 预览与编辑器使用不可变排序，避免渲染时原地修改 props，降低隐性状态抖动。
+## PDF 导出
 
-### 用户中心与后台存储
+- **服务端**：`POST /api/pdf` 使用 headless Chromium 渲染 `/print`，返回 `application/pdf`
+- **降级**：服务不可用时提示用户使用浏览器打印（关闭页眉页脚、勾选背景图形）
+- **健康检查**：`GET /api/pdf/health`
 
-- 首页即用户中心：集中管理后台保存的简历条目
-- 数据通过 `/api/resumes` 统一读写，运行时落在服务端 `data/resumes.sqlite`
-- 首次启动 SQLite 仓库时会自动从旧版 `data/resumes.json` / `data/resumes.json.bak` 迁移已有简历
-- 操作：新建、编辑、预览、复制（从现有条目预填）、成品导出、批量选择与删除等
-- 支持按标题搜索、按名称/创建时间/更新时间排序
+部署 Serverless（如 Vercel）时需 **Node.js Runtime**，建议提高函数内存与超时。
 
-### 个人信息编辑
+---
 
-支持添加、编辑和删除个人信息项，如姓名、电话、邮箱等。每个信息项可以设置标签、值和图标。
+## 访问口令（可选）
 
-### 求职意向
+设置 `SITE_PASSWORD` 后，未认证用户会跳转 `/auth`。未设置则不启用认证。
 
-支持添加、编辑和删除个人求职意向、期望薪资、目标城市等信息。
+---
 
-### 简历模块
+## 开源与安全
 
-支持多种类型的简历模块，如教育背景、工作经历、项目经验等。每个模块可以包含标题、图标、和详细内容。
+- **不要提交** `data/ai-config.json`、`.env.local`、`data/resumes.sqlite` 等本地运行时文件
+- 仓库内 **不含** 任何个人 API Key 或私有服务地址
+- 若 Key 曾误提交 Git 历史，请轮换密钥并清理历史记录
 
-### PDF 导出（服务端优先，自动降级）
-
-- 服务端优先：`POST /api/pdf` 使用 `puppeteer-core + @sparticuz/chromium` 打开`/print`，通过`sessionStorage`传入数据，设置`displayHeaderFooter:false`、`printBackground:true`、`preferCSSPageSize:true`，返回干净的`application/pdf`（inline）。
-- 降级体验：若服务端不可用或失败，自动使用浏览器打印（所见即所得），界面会提示：
-  - 关闭“页眉和页脚”
-  - 勾选“背景图形”
-
-环境变量（可选）
-- `NEXT_PUBLIC_FORCE_SERVER_PDF=true` 强制使用服务端 PDF
-- `NEXT_PUBLIC_FORCE_PRINT=true` 强制使用浏览器打印
-- `PUPPETEER_EXECUTABLE_PATH=/path/to/chrome` 或 `CHROME_PATH=/path/to/chrome` 指定系统 Chrome 可执行文件（在某些平台上更稳定）
-
-接口说明
-- `GET /api/pdf/health`：健康检查，验证 headless 启动能力
-- `POST /api/pdf`：传入`{ resumeData }`，直接返回`application/pdf`
-- `POST /api/pdf/:filename`：传入`{ resumeData }`，生成后返回`303`到`GET /api/pdf/:filename?token=...`（便于内联预览/下载）
-- `GET /api/pdf/:filename?token=...`：短期缓存（约 5 分钟）内联返回 PDF
-- `GET /api/image-proxy?url=...`：图片代理，导出图片时用于规避跨域与画布污染
-### 部署到 Vercel
-
-- 仅支持 Node.js Runtime 的 Serverless Functions（不是 Edge）。
-- 我们在 `route.ts` 中声明了 `export const runtime = 'nodejs'` 与 `dynamic = 'force-dynamic'`。
-- 依赖：`puppeteer-core`、`@sparticuz/chromium`（Serverless 友好）。无需打包二进制。
-- 建议在项目设置提升函数超时与内存（如 1024MB/1536MB）。
-
-### 成品导出
-
-- 导出支持 PDF、PNG、JPG、WEBP、SVG 等成品格式
-- 编辑页右上角内置导出菜单；导出 PDF 默认走服务端，可降级浏览器打印
-
-## 自定义主题
-
-项目使用 Tailwind CSS 进行样式管理，可按需扩展样式与主题（见样式与组件代码）。
-
-
-## 访问密码保护
-
-如果你希望对页面访问进行简单的密码保护，可设置环境变量 `SITE_PASSWORD`。当该变量存在且不为空时：
-- 用户访问任意页面会先被重定向到 `/auth` 输入密码；
-- 验证通过后，服务端会在浏览器写入一个有效期 30 天的 Cookie，后续访问无需再输入；
-- 若未配置 `SITE_PASSWORD`，则不启用认证，正常访问。
-
-使用方法：
-- 在项目根目录新增或编辑 `.env.local` 文件，加入：
-
-```
-SITE_PASSWORD=你的访问密码
-```
-
-说明：
-- 我们不会在 Cookie 中保存明文密码，而是保存其 SHA-256 摘要；
-- 中间件只对页面路由生效，不拦截 `/_next/*`、`/favicon.ico`、`/robots.txt` 以及认证相关路径 `/auth`、`/api/auth`；
-- 如需关闭认证，删除或清空 `SITE_PASSWORD` 即可。
-
-## TODO
-
-### 集成 AI 服务
-- [ ] 允许用户自定义服务提供商和模型，支持 OpenAI、Anthropic、Gemini等接口类型
-- [ ] 结合 Job Description 自动编写、润色、优化、纠错简历
-- [ ] 基于简历给出面试准备建议
-- [ ] 模拟面试
-- [ ] 利用 AI Agent 从网络自动抓取并汇总相似岗位的面经并展示
-
-### 个性化简历样式
-- [ ] 提供更多简历模板以供选择，可参考 [novoresume](https://novoresume.com/cv-templates)
-
-### 支持加密远程存储
-- [ ] 集成 WebDAV、Google Cloud、OneDrive 等用于数据存储与同步
-- [ ] 用户自定义加密密码
+---
 
 ## 许可证
 
-MIT。详见 [LICENSE](./LICENSE)。
+MIT，详见 [LICENSE](./LICENSE)。
 
 本项目基于 [wzdnzd/resume](https://github.com/wzdnzd/resume) 修改，保留原项目 MIT 版权与许可声明。

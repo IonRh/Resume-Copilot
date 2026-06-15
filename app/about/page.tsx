@@ -3,7 +3,7 @@ import { Icon } from "@iconify/react"
 import AboutAiConfigForm from "@/components/about-ai-config-form"
 import LogoutButton from "@/components/logout-button"
 import { Button } from "@/components/ui/button"
-import { loadAiProviderConfig, toPublicAiProviderConfig } from "@/lib/server/ai-config"
+import { loadPublicAiProviderConfig } from "@/lib/server/ai-config"
 
 export const dynamic = "force-dynamic"
 
@@ -46,7 +46,7 @@ function InfoLink({ title, href, icon }: { title: string; href: string; icon: st
 }
 
 export default async function AboutPage() {
-  const aiConfig = toPublicAiProviderConfig(await loadAiProviderConfig())
+  const aiConfig = await loadPublicAiProviderConfig()
   const ourGithubUrl = resolveOurGithubUrl()
 
   return (
@@ -58,7 +58,7 @@ export default async function AboutPage() {
               <Icon icon="mdi:information-outline" className="h-3.5 w-3.5 text-primary" />
               About
             </div>
-            <h1 className="mt-3 text-2xl font-semibold">关于简历工作区</h1>
+            <h1 className="mt-3 text-2xl font-semibold">关于智简Copilot</h1>
           </div>
           <div className="flex items-center gap-2">
             <LogoutButton />

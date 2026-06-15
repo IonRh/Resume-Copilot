@@ -27,6 +27,7 @@ yarn-error.log*
 /data/*
 !/data/templates/
 !/data/templates/**
+!/data/ai-config.example.json
 
 # vercel
 .vercel

@@ -143,7 +143,8 @@ function WorkspaceInner({
               <Icon icon="mdi:file-account-outline" className="h-4 w-4" />
             </span>
             <h1 className="hidden text-base font-semibold sm:block">
-              <span className="brand-gradient-text">AI</span> 简历工作区
+              <span className="brand-gradient-text">智简</span>
+              <span className="text-foreground">Copilot</span>
             </h1>
           </div>
           <Badge variant="secondary" className="max-w-[160px] truncate text-xs">

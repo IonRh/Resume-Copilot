@@ -28,7 +28,7 @@ export default function AuthForm({
             <Lock className="size-5" aria-hidden />
           </div>
           <div>
-            <h1 className="text-lg font-semibold leading-tight">登录超级简历</h1>
+            <h1 className="text-lg font-semibold leading-tight">登录智简Copilot</h1>
           </div>
         </div>
 

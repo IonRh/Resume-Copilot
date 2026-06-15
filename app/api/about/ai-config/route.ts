@@ -1,15 +1,10 @@
-import {
-  loadAiProviderConfig,
-  saveAiProviderConfig,
-  toPublicAiProviderConfig,
-} from "@/lib/server/ai-config"
+import { loadPublicAiProviderConfig, saveAiProviderConfig } from "@/lib/server/ai-config"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET() {
-  const config = await loadAiProviderConfig()
-  return Response.json(toPublicAiProviderConfig(config))
+  return Response.json(await loadPublicAiProviderConfig())
 }
 
 export async function POST(req: Request) {
@@ -21,6 +16,6 @@ export async function POST(req: Request) {
   }
 
   const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {}
-  const config = await saveAiProviderConfig(input)
-  return Response.json(toPublicAiProviderConfig(config))
+  await saveAiProviderConfig(input)
+  return Response.json(await loadPublicAiProviderConfig())
 }

@@ -33,8 +33,7 @@ export default async function AuthPage({
                   写简历 · 练面试 · 投岗位，一站搞定
                 </div>
                 <h1 className="mt-5 text-3xl font-bold leading-tight sm:text-5xl">
-                  <span className="brand-gradient-text">超级简历</span>
-                  <span className="text-foreground"> · AI 求职助手</span>
+                  <span className="brand-gradient-text">智简Copilot</span>
                 </h1>
                 <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                   改简历、对 JD、练面试、写求职信——求职路上该烦的事，帮你少烦一点。
