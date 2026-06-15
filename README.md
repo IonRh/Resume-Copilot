@@ -384,6 +384,9 @@ SITE_PASSWORD=你的口令
 
 ---
 
+## 友链
+
+- [linux.do](https://linux.do)
 
 ---
 
