@@ -1,0 +1,96 @@
+/* Tiptap Editor Styles */
+
+/* Basic editor styling */
+.ProseMirror {
+  outline: none;
+  min-height: 40px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: inherit;
+}
+
+/* Placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Code styling */
+.ProseMirror code {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  color: inherit;
+  background-color: #f6f8fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #e1e4e8;
+}
+
+/* List styling */
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.5rem !important;
+  margin: 0 !important;
+  list-style-position: outside !important;
+}
+
+.ProseMirror ul {
+  list-style-type: disc !important;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal !important;
+}
+
+.ProseMirror li {
+  margin: 0 !important;
+  display: list-item !important;
+  list-style: inherit !important;
+}
+
+.ProseMirror li p {
+  display: inline !important;
+  margin: 0 !important;
+}
+
+/* Nested lists */
+.ProseMirror ul ul,
+.ProseMirror ol ul {
+  list-style-type: circle !important;
+}
+
+.ProseMirror ul ul ul,
+.ProseMirror ol ul ul,
+.ProseMirror ol ol ul,
+.ProseMirror ul ol ul {
+  list-style-type: square !important;
+}
+
+/* Remove default paragraph margins for inline content */
+.ProseMirror p {
+  margin: 0;
+}
+
+/* Selection styling */
+.ProseMirror ::selection {
+  background-color: #b3d4fc;
+}
+
+/* Focus styling */
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Underline styling */
+.ProseMirror u {
+  text-decoration: underline;
+}
+
+/* Read-only mode (for preview) */
+.ProseMirror[contenteditable="false"] {
+  cursor: default;
+}
+

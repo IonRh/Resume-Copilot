@@ -1,0 +1,11 @@
+   ▲ Next.js 16.0.7 (webpack)
+   - Local:         http://localhost:3000
+   - Network:       http://10.46.78.172:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.3s
+ ○ Compiling /_not-found ...
+ GET /auth?from=%2F 500 in 7.0s (compile: 6.7s, proxy.ts: 4ms, render: 281ms)
+ GET / 500 in 1260ms (compile: 1232ms, proxy.ts: 10ms, render: 18ms)
+ GET / 500 in 20ms (compile: 5ms, proxy.ts: 6ms, render: 8ms)
