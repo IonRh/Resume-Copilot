@@ -1070,7 +1070,7 @@ export default function UserCenter() {
           >
             <DialogHeader>
               <DialogTitle>选择要分析的简历</DialogTitle>
-              <DialogDescription>进入工作台后，AI 会基于这份简历反推适合你投递的岗位方向。</DialogDescription>
+              <DialogDescription>进入工作台后先完成 Holland 职业兴趣测验（可跳过），AI 将结合测验结果与简历反推适合的方向。</DialogDescription>
             </DialogHeader>
 
             <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">

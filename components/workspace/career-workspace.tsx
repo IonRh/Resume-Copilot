@@ -34,7 +34,9 @@ import { CAREER_BRIEFING_KEY } from "@/components/agent/career-intake-dialog"
 import ResumePreview from "@/components/resume-preview"
 import ExportButton from "@/components/export-button"
 import AgentPanel, { type AgentPanelHandle } from "@/components/agent/agent-panel"
+import HollandTestDialog from "@/components/agent/holland-test-dialog"
 import type { AgentCard, WorkspaceSelection } from "@/lib/agent/types"
+import { buildDiscoverKickoffPrompt } from "@/lib/holland-test"
 
 type CareerMode = "jd" | "interview" | "discover"
 
@@ -198,6 +200,7 @@ function CareerInner({
   const [variantDialogOpen, setVariantDialogOpen] = useState(false)
   const [variantTitle, setVariantTitle] = useState("")
   const [savingVariant, setSavingVariant] = useState(false)
+  const [hollandOpen, setHollandOpen] = useState(() => mode === "discover")
 
   const { resumeData } = ws
   const kickoff = ws.kickoff
@@ -302,9 +305,24 @@ function CareerInner({
     if (prompt) setKickoff(prompt)
   }, [hydrated, mode, newSession, profile.intake?.initialPrompt, setAgentOpen, setJd, setKickoff, setMode])
 
-  // 非 JD 专注页只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
+  // 岗位方向推荐：Holland 测验完成或跳过后再发起首条指令；已有会话则不再弹出测验。
   useEffect(() => {
-    if (mode === "jd" || !hydrated || turnCount > 0 || kickoff) return
+    if (mode !== "discover" || !hydrated) return
+    if (turnCount > 0) setHollandOpen(false)
+  }, [hydrated, mode, turnCount])
+
+  const finishHolland = useCallback(
+    (briefing: string | null) => {
+      setHollandOpen(false)
+      if (briefing) setJd(briefing)
+      setKickoff(buildDiscoverKickoffPrompt(briefing))
+    },
+    [setJd, setKickoff],
+  )
+
+  // 非 JD / 非 discover 专注页只在全新会话首次进入时自动发起首条指令；刷新已有会话不重复注入。
+  useEffect(() => {
+    if (mode === "jd" || mode === "discover" || !hydrated || turnCount > 0 || kickoff) return
     if (mode === "interview" && !briefingRef.current) return
     const prompt = profile.initialPrompt ?? profile.intake?.initialPrompt
     if (prompt) setKickoff(prompt)
@@ -521,6 +539,14 @@ function CareerInner({
           </form>
         </DialogContent>
       </Dialog>
+
+      {mode === "discover" ? (
+        <HollandTestDialog
+          open={hollandOpen}
+          onComplete={(_result, briefing) => finishHolland(briefing)}
+          onSkip={() => finishHolland(null)}
+        />
+      ) : null}
     </div>
   )
 }

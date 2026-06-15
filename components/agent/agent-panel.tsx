@@ -195,8 +195,14 @@ const AgentPanel = forwardRef<AgentPanelHandle, {
     kickoffSent.current = true
     const prompt = ws.kickoff
     ws.setKickoff(null)
-    // JD 模式：用一句人话替代暴露内部 present_jd_match 指令的气泡
-    void send(prompt, panelMode === "jd" ? { displayText: "开始分析我与目标岗位的匹配度" } : undefined)
+    // JD / 岗位方向推荐：用一句人话替代暴露内部指令的气泡
+    const displayText =
+      panelMode === "jd"
+        ? "开始分析我与目标岗位的匹配度"
+        : panelMode === "discover"
+          ? "开始了解我的背景与偏好"
+          : undefined
+    void send(prompt, displayText ? { displayText } : undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.kickoff, running])
 
