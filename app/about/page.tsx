@@ -8,7 +8,7 @@ import { loadPublicAiProviderConfig } from "@/lib/server/ai-config"
 export const dynamic = "force-dynamic"
 
 const ORIGINAL_PROJECT_URL = "https://github.com/wzdnzd/resume"
-const DEFAULT_PROJECT_URL = "https://github.com/Isla7940-s/Supper-resume"
+const DEFAULT_PROJECT_URL = "https://github.com/Isla7940-s/Resume-Copilot"
 
 function resolveOurGithubUrl(): string {
   const explicit = (process.env.NEXT_PUBLIC_APP_GITHUB_URL ?? process.env.APP_GITHUB_URL ?? "").trim()
