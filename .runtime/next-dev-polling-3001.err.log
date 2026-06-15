@@ -1,6 +1,0 @@
- ⚠ `eslint` configuration in next.config.mjs is no longer supported. See more info here: https://nextjs.org/docs/app/api-reference/cli/next#next-lint-options
- ⚠ Invalid next.config.mjs options detected: 
- ⚠     Unrecognized key(s) in object: 'eslint'
- ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
-[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
- ⨯ Unable to acquire lock at C:\Users\Isla7940\Desktop\jianli\.next\dev\lock, is another instance of next dev running?
