@@ -8,7 +8,6 @@ import PdfLoading from "@/components/pdf-loading"
 
 const FORCE_PRINT = process.env.NEXT_PUBLIC_FORCE_PRINT === "true"
 const FORCE_SERVER = process.env.NEXT_PUBLIC_FORCE_SERVER_PDF === "true"
-const SERVER_PDF_TIMEOUT_MS = 240000
 const SERVER_PDF_HEALTH_TIMEOUT_MS = 40000
 
 async function fetchWithTimeout(input: RequestInfo, init?: RequestInit & { timeout?: number }) {
@@ -30,6 +29,22 @@ async function checkServerPdfAvailable(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function navigateToServerCoverLetterPdf(printData: CoverLetterPrintPayload, filename: string) {
+  const form = document.createElement("form")
+  form.method = "POST"
+  form.action = `/api/pdf/cover-letter/${filename}`
+  form.style.display = "none"
+
+  const input = document.createElement("input")
+  input.type = "hidden"
+  input.name = "coverLetterData"
+  input.value = JSON.stringify(printData)
+  form.appendChild(input)
+
+  document.body.appendChild(form)
+  form.submit()
 }
 
 export type Mode = "loading" | "server" | "fallback"
@@ -114,29 +129,8 @@ export function CoverLetterPDFViewer({
         try {
           const parsed: CoverLetterPrintPayload = JSON.parse(printKey)
           const targetName = serverFilename || generateCoverLetterPdfFilename(parsed.title || "")
-          const res = await fetchWithTimeout(`/api/pdf/cover-letter/${targetName}`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ coverLetterData: parsed }),
-            timeout: SERVER_PDF_TIMEOUT_MS,
-          })
-          if (!res.ok) {
-            const ct = res.headers.get("content-type") || ""
-            let detail = ""
-            try {
-              if (ct.includes("application/json")) {
-                const j = await res.json()
-                detail = j?.error ? String(j.error) : JSON.stringify(j)
-              } else {
-                detail = await res.text()
-              }
-            } catch {
-              /* ignore */
-            }
-            throw new Error(`Failed to generate PDF (${res.status}). ${detail}`)
-          }
           if (!mounted || genIdRef.current !== currentId) return
-          window.location.assign(res.url || `/api/pdf/cover-letter/${targetName}`)
+          navigateToServerCoverLetterPdf(parsed, targetName)
         } catch (e) {
           console.error(e)
           if (!mounted || genIdRef.current !== currentId) return

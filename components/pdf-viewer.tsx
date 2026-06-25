@@ -65,9 +65,20 @@ async function generateServerPdf(resumeData: ResumeData): Promise<Blob> {
   return await res.blob();
 }
 
-async function generateServerPdfUrl(resumeData: ResumeData, filename: string): Promise<string> {
-  const res = await postServerPdf(resumeData, filename);
-  return res.url || `/api/pdf/${filename}`;
+function navigateToServerPdf(resumeData: ResumeData, filename: string) {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `/api/pdf/${filename}`;
+  form.style.display = "none";
+
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "resumeData";
+  input.value = JSON.stringify(resumeData);
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
 }
 
 export type Mode = "loading" | "server" | "fallback";
@@ -166,9 +177,8 @@ export function PDFViewer({
         try {
           const parsed: ResumeData = JSON.parse(resumeKey);
           const targetName = serverFilename || generatePdfFilename(parsed.title || "");
-          const url = await generateServerPdfUrl(parsed, targetName);
           if (!mounted || genIdRef.current !== currentId) return;
-          window.location.assign(url);
+          navigateToServerPdf(parsed, targetName);
         } catch (e) {
           console.error(e);
           if (!mounted || genIdRef.current !== currentId) return;

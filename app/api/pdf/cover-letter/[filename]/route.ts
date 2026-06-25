@@ -1,4 +1,4 @@
-import { configureChromiumRuntimeEnv } from "@/lib/chromium"
+import { configureChromiumRuntimeEnv, resolveChromiumExecutablePath } from "@/lib/chromium"
 import type { CoverLetterPrintPayload } from "@/lib/cover-letter-pdf"
 import { getAuthCookieValue } from "@/lib/server/pdf-auth-cookie"
 
@@ -95,15 +95,13 @@ export async function POST(
     }
     const url = `${origin}/print/cover-letter`
 
-    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH || ""
-    const executablePath = envPath || (await chromium.executablePath())
+    const { executablePath, usingSystemChrome } = await resolveChromiumExecutablePath(chromium)
     if (!executablePath) {
-      return new Response(JSON.stringify({ error: "Chromium executable not found (set PUPPETEER_EXECUTABLE_PATH)" }), {
+      return new Response(JSON.stringify({ error: "Chromium executable not found. Install Chrome/Edge locally or set PUPPETEER_EXECUTABLE_PATH." }), {
         status: 503,
         headers: { "content-type": "application/json" },
       })
     }
-    const usingSystemChrome = !!envPath
     const launchArgs = usingSystemChrome
       ? ["--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
       : chromium.args

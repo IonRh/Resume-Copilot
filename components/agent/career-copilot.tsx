@@ -44,6 +44,9 @@ interface Msg {
   actions?: CopilotAction[]
 }
 
+const STREAM_FLUSH_MS = 80
+const MAX_COPILOT_ROUNDS = 6
+
 const QUICK_CHIPS: { label: string; send: string }[] = [
   { label: "从哪开始", send: "我该从哪开始？" },
   { label: "投递进度", send: "我的投递怎么样了？" },
@@ -145,6 +148,8 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const kickedOffRef = useRef(false)
+  const streamBufferRef = useRef("")
+  const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 预取投递并算出红点数（不依赖打开面板）
   useEffect(() => {
@@ -168,25 +173,67 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, streamText, busy])
 
+  useEffect(
+    () => () => {
+      if (streamTimerRef.current) clearTimeout(streamTimerRef.current)
+    },
+    [],
+  )
+
+  const flushStreamText = useCallback(() => {
+    if (!streamBufferRef.current) return
+    const chunk = streamBufferRef.current
+    streamBufferRef.current = ""
+    setStreamText((prev) => prev + chunk)
+  }, [])
+
+  const queueStreamText = useCallback((delta: string) => {
+    if (!delta) return
+    streamBufferRef.current += delta
+    if (streamTimerRef.current) return
+    streamTimerRef.current = window.setTimeout(() => {
+      streamTimerRef.current = null
+      flushStreamText()
+    }, STREAM_FLUSH_MS)
+  }, [flushStreamText])
+
+  const resetStreamText = useCallback(() => {
+    if (streamTimerRef.current) {
+      clearTimeout(streamTimerRef.current)
+      streamTimerRef.current = null
+    }
+    streamBufferRef.current = ""
+    setStreamText("")
+  }, [])
+
   // 运行一轮对话循环：history 已包含本轮（可能隐藏的）用户指令
   const run = useCallback(async () => {
     setError(null)
     setBusy(true)
     const controller = new AbortController()
     abortRef.current = controller
+    let roundCount = 0
 
     try {
       while (!controller.signal.aborted) {
         if (controller.signal.aborted) break
+        if (roundCount >= MAX_COPILOT_ROUNDS) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "这轮推荐的工具调用次数太多，我先停在这里。换个更具体的问题继续会更稳。" },
+          ])
+          break
+        }
+        roundCount += 1
 
-        setStreamText("")
+        resetStreamText()
         const { content, toolCalls } = await streamChat(
           [{ role: "system", content: systemRef.current }, ...historyRef.current.slice(-20)],
           { tools: COPILOT_TOOLS, toolChoice: "auto" },
           controller.signal,
-          (delta) => setStreamText((p) => p + delta),
+          queueStreamText,
         )
-        setStreamText("")
+        resetStreamText()
 
         const actions = toolCalls
           .filter((c) => c.function.name === "suggest_actions")
@@ -255,12 +302,12 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
         const fallback = buildFallbackBriefing(sig)
         setMessages((m) => [...m, { role: "assistant", content: fallback.text, actions: fallback.actions }])
       }
-      setStreamText("")
+      resetStreamText()
     } finally {
       setBusy(false)
       abortRef.current = null
     }
-  }, [resumes, signals])
+  }, [queueStreamText, resetStreamText, resumes, signals])
 
   // 首次打开：拉取最新投递、注入现状并自动播报
   const ensureKickoff = useCallback(() => {
@@ -290,8 +337,9 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
 
   const handleClose = useCallback(() => {
     abortRef.current?.abort()
+    resetStreamText()
     setOpen(false)
-  }, [])
+  }, [resetStreamText])
 
   const send = useCallback(
     (raw: string) => {
@@ -308,12 +356,12 @@ export default function CareerCopilot({ resumes, onAction }: CareerCopilotProps)
   const reset = useCallback(() => {
     abortRef.current?.abort()
     setMessages([])
-    setStreamText("")
+    resetStreamText()
     setError(null)
     historyRef.current = []
     kickedOffRef.current = false
     ensureKickoff()
-  }, [ensureKickoff])
+  }, [ensureKickoff, resetStreamText])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

@@ -28,6 +28,8 @@ const HISTORY_LIMIT = 24
 const STREAM_FLUSH_MS = 80
 const DEFAULT_MAX_STREAM_CHARS = 12000
 const ANALYSIS_MAX_STREAM_CHARS = 3500
+const MAX_AGENT_ROUNDS = 8
+const MAX_RESCORE_ROUNDS = 4
 
 function toolsForMode(mode: AgentMode, interviewPlayMode?: "practice" | "simulation") {
   switch (mode) {
@@ -120,6 +122,7 @@ export function useAgent(workspace?: WorkspaceContextValue) {
       let stoppedByLimit = false
       let pendingText = ""
       let flushTimer: ReturnType<typeof setTimeout> | null = null
+      let roundCount = 0
 
       const flushText = () => {
         if (!pendingText) return
@@ -149,6 +152,11 @@ export function useAgent(workspace?: WorkspaceContextValue) {
       try {
         while (!controller.signal.aborted) {
           if (controller.signal.aborted) break
+          if (roundCount >= MAX_AGENT_ROUNDS) {
+            queueText("\n\n（工具调用轮次过多，已自动停止，请换一种问法继续。）")
+            break
+          }
+          roundCount += 1
 
           const trimmedHistory = historyRef.current.slice(-HISTORY_LIMIT)
           const messages = [system, ...trimmedHistory]
@@ -299,8 +307,11 @@ export function useAgent(workspace?: WorkspaceContextValue) {
         }),
       }
       const history: ChatMessage[] = [{ role: "user", content: JD_RESCORE_INSTRUCTION }]
+      let roundCount = 0
       while (!controller.signal.aborted) {
         if (controller.signal.aborted) break
+        if (roundCount >= MAX_RESCORE_ROUNDS) break
+        roundCount += 1
         const { content, toolCalls } = await streamChat(
           [system, ...history],
           { tools: JD_RESCORE_TOOL_SCHEMAS },

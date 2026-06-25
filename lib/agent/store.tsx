@@ -28,6 +28,7 @@ import type {
 } from "./types"
 
 const JD_SCORE_HISTORY_LIMIT = 20
+const PERSISTED_TURN_LIMIT = 40
 
 /** 为 JD 建议生成稳定 id（基于 section + advice，便于跨版本跟踪状态） */
 function suggestionKey(section: string, advice: string): string {
@@ -249,6 +250,10 @@ function normalizeSession(session: AgentSession): AgentSession {
     createdAt: session.createdAt || new Date().toISOString(),
     updatedAt: session.updatedAt || new Date().toISOString(),
   }
+}
+
+function hasStreamingTurns(sessions: AgentSession[]): boolean {
+  return sessions.some((session) => session.turns.some((turn) => turn.streaming))
 }
 
 function hydrateAgentState(parsed: PersistedAgentState): { sessions: AgentSession[]; activeSessionId: string } {
@@ -478,6 +483,7 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
 }
 
 export interface WorkspaceContextValue {
+  storageKey: string
   resumeData: ResumeData
   selection: WorkspaceSelection | null
   agentOpen: boolean
@@ -598,6 +604,7 @@ export function ResumeWorkspaceProvider({
 
   useEffect(() => {
     if (!state.hydrated || typeof window === "undefined") return
+    if (hasStreamingTurns(state.sessions)) return
     const timer = window.setTimeout(() => {
       try {
         const sessions = state.sessions.map((session) => ({
@@ -612,6 +619,7 @@ export function ResumeWorkspaceProvider({
                 (t.cards && t.cards.length),
             )
             .filter((t) => !t.streaming)
+            .slice(-PERSISTED_TURN_LIMIT)
             .map((t) => ({
               id: t.id,
               role: t.role,
@@ -702,6 +710,7 @@ export function ResumeWorkspaceProvider({
     const mode = activeSession?.mode || "edit"
     const pendingCount = staged.filter((s) => s.status === "pending" && !s.hydrated && isApplicableChange(s.change)).length
     return {
+      storageKey,
       resumeData: state.resumeData,
       selection: state.selection,
       agentOpen: state.agentOpen,
@@ -776,7 +785,7 @@ export function ResumeWorkspaceProvider({
         }),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, cb])
+  }, [state, cb, storageKey])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

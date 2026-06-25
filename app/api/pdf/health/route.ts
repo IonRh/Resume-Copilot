@@ -1,6 +1,6 @@
 // Copyright (c) 2025 wzdnzd
 // SPDX-License-Identifier: MIT
-import { configureChromiumRuntimeEnv } from "@/lib/chromium";
+import { configureChromiumRuntimeEnv, resolveChromiumExecutablePath } from "@/lib/chromium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,15 +10,14 @@ export async function GET() {
   try {
     configureChromiumRuntimeEnv();
     const { default: chromium } = await import("@sparticuz/chromium");
-    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH || "";
-    const resolvedPath = envPath || (await chromium.executablePath());
+    const { executablePath: resolvedPath, usingSystemChrome } = await resolveChromiumExecutablePath(chromium);
     if (!resolvedPath) {
-      return new Response(JSON.stringify({ ok: false, error: "No executablePath (set PUPPETEER_EXECUTABLE_PATH)" }), {
+      return new Response(JSON.stringify({ ok: false, error: "No executablePath (install Chrome/Edge locally or set PUPPETEER_EXECUTABLE_PATH)" }), {
         status: 503,
         headers: { "content-type": "application/json" },
       });
     }
-    return new Response(JSON.stringify({ ok: true }), {
+    return new Response(JSON.stringify({ ok: true, executablePath: resolvedPath, usingSystemChrome }), {
       headers: { "content-type": "application/json" },
     });
   } catch (error) {

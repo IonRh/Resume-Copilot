@@ -130,10 +130,23 @@ export function openPdfPreviewWithHandshake(
   const child = window.open(path, "_blank")
   if (!child) return null
 
+  let delivered = false
+  let cleanupTimer = 0
+
+  const cleanup = () => {
+    window.removeEventListener("message", onMessage)
+    if (cleanupTimer) {
+      window.clearTimeout(cleanupTimer)
+      cleanupTimer = 0
+    }
+  }
+
   const deliver = () => {
-    if (child.closed) return
+    if (delivered || child.closed) return
     try {
       sendToChild(child)
+      delivered = true
+      cleanup()
     } catch {
       /* ignore cross-origin / detached window */
     }
@@ -146,7 +159,7 @@ export function openPdfPreviewWithHandshake(
   }
 
   window.addEventListener("message", onMessage)
-  window.setTimeout(() => window.removeEventListener("message", onMessage), HANDSHAKE_MS)
+  cleanupTimer = window.setTimeout(cleanup, HANDSHAKE_MS)
   deliver()
   return child
 }

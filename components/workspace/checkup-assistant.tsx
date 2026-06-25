@@ -10,10 +10,90 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { runAiCheckup, type AiCheckupIssue, type AiCheckupReport } from "@/lib/agent/checkup"
 import { useResumeWorkspace } from "@/lib/agent/store"
 
 const AUTO_INTERVAL_MS = 60_000
+const CHECKUP_HISTORY_LIMIT = 8
+const CHECKUP_STORAGE_VERSION = 1
+
+interface CheckupHistoryEntry {
+  id: string
+  report: AiCheckupReport
+  resumeVersion: string
+  source: "auto" | "manual"
+}
+
+interface PersistedCheckupState {
+  version: number
+  history: CheckupHistoryEntry[]
+}
+
+function checkupStorageKey(storageKey: string): string {
+  return `${storageKey}.checkup-history`
+}
+
+function normalizeHistoryEntry(raw: unknown): CheckupHistoryEntry | null {
+  if (!raw || typeof raw !== "object") return null
+  const entry = raw as Partial<CheckupHistoryEntry>
+  if (typeof entry.id !== "string") return null
+  if (typeof entry.resumeVersion !== "string") return null
+  if (entry.source !== "auto" && entry.source !== "manual") return null
+  const report = entry.report as Partial<AiCheckupReport> | undefined
+  if (!report || typeof report.summary !== "string" || typeof report.generatedAt !== "string") return null
+  return {
+    id: entry.id,
+    resumeVersion: entry.resumeVersion,
+    source: entry.source,
+    report: {
+      summary: report.summary,
+      overallScore: typeof report.overallScore === "number" ? report.overallScore : undefined,
+      dimensions: Array.isArray(report.dimensions) ? report.dimensions : [],
+      strengths: Array.isArray(report.strengths) ? report.strengths.map(String) : [],
+      generatedAt: report.generatedAt,
+      issues: Array.isArray(report.issues) ? report.issues : [],
+    },
+  }
+}
+
+function loadPersistedHistory(storageKey: string): CheckupHistoryEntry[] {
+  const raw = window.localStorage.getItem(checkupStorageKey(storageKey))
+  if (!raw) return []
+  const parsed = JSON.parse(raw) as PersistedCheckupState | CheckupHistoryEntry[]
+  const items = Array.isArray(parsed) ? parsed : Array.isArray(parsed.history) ? parsed.history : []
+  return items.map(normalizeHistoryEntry).filter((entry): entry is CheckupHistoryEntry => Boolean(entry)).slice(0, CHECKUP_HISTORY_LIMIT)
+}
+
+function savePersistedHistory(storageKey: string, history: CheckupHistoryEntry[]): void {
+  if (!history.length) {
+    window.localStorage.removeItem(checkupStorageKey(storageKey))
+    return
+  }
+  const payload: PersistedCheckupState = {
+    version: CHECKUP_STORAGE_VERSION,
+    history: history.slice(0, CHECKUP_HISTORY_LIMIT),
+  }
+  window.localStorage.setItem(checkupStorageKey(storageKey), JSON.stringify(payload))
+}
+
+function createHistoryEntry(
+  report: AiCheckupReport,
+  resumeVersion: string,
+  source: CheckupHistoryEntry["source"],
+): CheckupHistoryEntry {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return { id, report, resumeVersion, source }
+}
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "即将开始"
@@ -44,9 +124,31 @@ function scoreVerdict(score: number): string {
   return "需重写"
 }
 
+function sourceLabel(source: CheckupHistoryEntry["source"]): string {
+  return source === "manual" ? "手动体检" : "自动体检"
+}
+
+function formatGeneratedAt(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function historyLabel(entry: CheckupHistoryEntry): string {
+  const score = typeof entry.report.overallScore === "number" ? `${Math.round(entry.report.overallScore)} 分` : null
+  const issuePart = entry.report.issues.length ? `${entry.report.issues.length} 个优化点` : "无明显问题"
+  return [sourceLabel(entry.source), formatGeneratedAt(entry.report.generatedAt), score || issuePart].join(" · ")
+}
+
 export default function CheckupAssistant() {
   const ws = useResumeWorkspace()
-  const [report, setReport] = useState<AiCheckupReport | null>(null)
+  const [history, setHistory] = useState<CheckupHistoryEntry[]>([])
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [nextRunAt, setNextRunAt] = useState<number>(() => Date.now() + AUTO_INTERVAL_MS)
@@ -55,14 +157,47 @@ export default function CheckupAssistant() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const checkingRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
+  const historyHydratedKeyRef = useRef<string | null>(null)
   const resumeVersion = ws.resumeData.updatedAt
+  const latestEntry = history[0] ?? null
+  const selectedEntry = useMemo(
+    () => history.find((entry) => entry.id === selectedReportId) || latestEntry || null,
+    [history, latestEntry, selectedReportId],
+  )
+  const latestReport = latestEntry?.report ?? null
+  const report = selectedEntry?.report ?? null
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
 
-  const startCheckup = useCallback(async () => {
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    historyHydratedKeyRef.current = null
+    try {
+      const persisted = loadPersistedHistory(ws.storageKey)
+      setHistory(persisted)
+      setSelectedReportId((current) => current || persisted[0]?.id || null)
+    } catch {
+      setHistory([])
+      setSelectedReportId(null)
+    } finally {
+      historyHydratedKeyRef.current = ws.storageKey
+    }
+  }, [ws.storageKey])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (historyHydratedKeyRef.current !== ws.storageKey) return
+    try {
+      savePersistedHistory(ws.storageKey, history)
+    } catch {
+      /* localStorage 不可用时忽略，页面仍可正常使用 */
+    }
+  }, [history, ws.storageKey])
+
+  const startCheckup = useCallback(async (source: CheckupHistoryEntry["source"] = "manual") => {
     if (checkingRef.current) return
     checkingRef.current = true
     setChecking(true)
@@ -72,7 +207,12 @@ export default function CheckupAssistant() {
     abortRef.current = controller
     try {
       const next = await runAiCheckup(ws.resumeRef.current, controller.signal)
-      setReport(next)
+      const entry = createHistoryEntry(next, ws.resumeRef.current.updatedAt, source)
+      setHistory((prev) => [entry, ...prev].slice(0, CHECKUP_HISTORY_LIMIT))
+      setSelectedReportId((current) => {
+        if (dialogOpen && current) return current
+        return entry.id
+      })
       setBubbleDismissed(false)
       setNextRunAt(Date.now() + AUTO_INTERVAL_MS)
     } catch (err) {
@@ -86,7 +226,7 @@ export default function CheckupAssistant() {
       checkingRef.current = false
       setChecking(false)
     }
-  }, [ws.resumeRef])
+  }, [dialogOpen, ws.resumeRef])
 
   useEffect(() => {
     if (ws.agentOpen) return
@@ -97,7 +237,7 @@ export default function CheckupAssistant() {
     if (ws.agentOpen || checkingRef.current) return
     const delay = Math.max(0, nextRunAt - Date.now())
     const timer = window.setTimeout(() => {
-      void startCheckup()
+      void startCheckup("auto")
     }, delay)
     return () => window.clearTimeout(timer)
   }, [nextRunAt, startCheckup, ws.agentOpen])
@@ -105,24 +245,33 @@ export default function CheckupAssistant() {
   useEffect(() => () => abortRef.current?.abort(), [])
 
   const countdown = Math.max(0, nextRunAt - tick)
-  const highCount = report?.issues.filter((issue) => issue.priority === "high").length ?? 0
+  const highCount = latestReport?.issues.filter((issue) => issue.priority === "high").length ?? 0
   const buttonTitle = checking
     ? "AI 正在体检这份简历"
     : ws.agentOpen
       ? "AI 侧边栏开启时暂停自动体检"
       : `下次自动体检还有 ${formatCountdown(countdown)}`
 
-  const hasScore = typeof report?.overallScore === "number"
+  const latestHasScore = typeof latestReport?.overallScore === "number"
+  const currentHasScore = typeof report?.overallScore === "number"
   const bubbleTitle = useMemo(() => {
     if (error) return "AI 体检失败"
     if (checking) return "AI 正在体检"
-    if (!report) return ""
-    const scorePart = typeof report.overallScore === "number" ? `${Math.round(report.overallScore)} 分` : ""
-    if (report.issues.length === 0) return scorePart ? `AI 体检 ${scorePart} · 未发现明显问题` : "AI 体检未发现明显问题"
+    if (!latestReport) return ""
+    const scorePart = typeof latestReport.overallScore === "number" ? `${Math.round(latestReport.overallScore)} 分` : ""
+    if (latestReport.issues.length === 0) return scorePart ? `AI 体检 ${scorePart} · 未发现明显问题` : "AI 体检未发现明显问题"
     return scorePart
-      ? `AI 体检 ${scorePart} · ${report.issues.length} 个优化点`
-      : `AI 体检发现 ${report.issues.length} 个优化点`
-  }, [checking, error, report])
+      ? `AI 体检 ${scorePart} · ${latestReport.issues.length} 个优化点`
+      : `AI 体检发现 ${latestReport.issues.length} 个优化点`
+  }, [checking, error, latestReport])
+
+  const openLatestDialog = () => {
+    if (latestEntry) setSelectedReportId(latestEntry.id)
+    setDialogOpen(true)
+  }
+
+  const viewingHistoricalReport = Boolean(selectedEntry && latestEntry && selectedEntry.id !== latestEntry.id)
+  const staleReport = Boolean(selectedEntry && selectedEntry.resumeVersion !== resumeVersion)
 
   const runIssueWithAgent = (issue: AiCheckupIssue) => {
     const prompt = [
@@ -151,35 +300,46 @@ export default function CheckupAssistant() {
         size="sm"
         variant="outline"
         className="gap-2 bg-transparent"
-        onClick={() => void startCheckup()}
+        onClick={() => {
+          if (latestEntry || error) {
+            openLatestDialog()
+            return
+          }
+          void startCheckup("manual")
+        }}
         title={buttonTitle}
         disabled={checking}
       >
         <Icon icon={checking ? "mdi:loading" : "mdi:stethoscope"} className={`h-4 w-4 ${checking ? "agent-spin" : ""}`} />
         <span className="hidden sm:inline">体检</span>
-        {!checking && hasScore ? (
+        {!checking && latestHasScore ? (
           <span className="grid h-4 min-w-5 place-items-center rounded-full bg-primary/10 px-1 text-[10px] font-bold text-primary">
-            {Math.round(report!.overallScore!)}
+            {Math.round(latestReport!.overallScore!)}
           </span>
-        ) : !checking && report?.issues.length ? (
+        ) : !checking && latestReport?.issues.length ? (
           <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-100 px-1 text-[10px] font-bold text-amber-700">
-            {report.issues.length}
+            {latestReport.issues.length}
           </span>
         ) : null}
       </Button>
 
-      {(report || error || checking) && !bubbleDismissed && !dialogOpen ? (
+      {(latestReport || error || checking) && !bubbleDismissed && !dialogOpen ? (
         <div className="fixed bottom-5 right-5 z-40 w-[min(360px,calc(100vw-2rem))] rounded-xl border bg-background p-4 shadow-xl">
           <div className="flex items-start gap-3">
             <span className="brand-gradient-bg grid h-9 w-9 shrink-0 place-items-center rounded-lg">
               <Icon icon={checking ? "mdi:loading" : error ? "mdi:alert-circle-outline" : "mdi:stethoscope"} className={`h-5 w-5 ${checking ? "agent-spin" : ""}`} />
             </span>
-            <button className="min-w-0 flex-1 text-left" onClick={() => report && setDialogOpen(true)}>
+            <button
+              className="min-w-0 flex-1 text-left"
+              onClick={() => {
+                if (latestEntry || error) openLatestDialog()
+              }}
+            >
               <div className="text-sm font-semibold">{bubbleTitle}</div>
               <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
-                {error || report?.summary || "正在分析内容完整性、岗位表达、量化成果与样式一致性..."}
+                {error || latestReport?.summary || "正在分析内容完整性、岗位表达、量化成果与样式一致性..."}
               </p>
-              {report?.issues.length ? (
+              {latestReport?.issues.length ? (
                 <div className="mt-2 text-xs text-muted-foreground">
                   {highCount ? `${highCount} 项建议优先处理 · ` : ""}点击查看完整建议
                 </div>
@@ -199,11 +359,55 @@ export default function CheckupAssistant() {
               <Icon icon="mdi:stethoscope" className="h-5 w-5 text-primary" />
               AI 简历体检报告
             </DialogTitle>
-            <DialogDescription>{report?.summary}</DialogDescription>
+            <DialogDescription>{report?.summary || error || "查看最近一次 AI 体检结果。"}</DialogDescription>
           </DialogHeader>
 
+          <div className="flex flex-col gap-2 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              {history.length > 1 ? (
+                <Select value={selectedEntry?.id} onValueChange={setSelectedReportId}>
+                  <SelectTrigger className="h-9 w-full sm:max-w-md">
+                    <SelectValue placeholder="选择体检记录" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {history.map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        {historyLabel(entry)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : latestEntry ? (
+                <div className="text-xs text-muted-foreground">最近一次：{historyLabel(latestEntry)}</div>
+              ) : null}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 gap-1.5 bg-transparent"
+              onClick={() => void startCheckup("manual")}
+              disabled={checking}
+            >
+              <Icon icon={checking ? "mdi:loading" : "mdi:refresh"} className={`h-4 w-4 ${checking ? "agent-spin" : ""}`} />
+              重新体检
+            </Button>
+          </div>
+
           <div className="max-h-[62vh] space-y-3 overflow-y-auto pr-1">
-            {hasScore ? (
+            {selectedEntry && (viewingHistoricalReport || staleReport) ? (
+              <div className="rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                {viewingHistoricalReport ? `你正在查看历史体检：${historyLabel(selectedEntry)}。` : `当前展示的是 ${historyLabel(selectedEntry)}。`}
+                {staleReport ? " 这份报告基于较早的简历版本，便于回看之前的优化提示。" : ""}
+              </div>
+            ) : null}
+
+            {!report && error ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
+
+            {currentHasScore ? (
               <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="flex items-center gap-4">
                   <div className="score-ring" style={{ ["--val" as string]: String(Math.round(report!.overallScore!)) }}>

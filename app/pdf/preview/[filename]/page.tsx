@@ -2,7 +2,7 @@
 // Copyright (c) 2025 wzdnzd
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import PdfLoading from "@/components/pdf-loading"
 import type { ResumeData } from "@/types/resume"
 import { Button } from "@/components/ui/button"
@@ -28,31 +28,50 @@ function readResumeDataFromClientStorage(): ResumeData | null {
   return null
 }
 
+function subscribeHydration() {
+  return () => {}
+}
+
 function PDFPreviewContent() {
+  const hydrated = useSyncExternalStore(subscribeHydration, () => true, () => false)
   const [resumeData, setResumeData] = useState<ResumeData | null>(null)
+  const initialResumeData = useMemo(() => {
+    if (!hydrated || typeof window === "undefined") return null
+    return readResumeDataFromClientStorage()
+  }, [hydrated])
   const [loadError, setLoadError] = useState(false)
   const [fallback, setFallback] = useState(false)
   const hasDataRef = useRef(false)
+  const stopReadyPingRef = useRef<(() => void) | null>(null)
+  const lastPayloadRef = useRef<string | null>(null)
   const serverFilename =
-    typeof window !== "undefined"
+    hydrated && typeof window !== "undefined"
       ? decodeURIComponent((window.location.pathname || "").split("/").filter(Boolean).pop() || "")
       : undefined
 
-  useLayoutEffect(() => {
-    const initial = readResumeDataFromClientStorage()
-    if (initial) {
-      hasDataRef.current = true
-      setResumeData(initial)
-    }
+  const effectiveResumeData = resumeData ?? initialResumeData
+  const handleModeChange = useCallback((m: "loading" | "server" | "fallback") => {
+    setFallback(m === "fallback")
   }, [])
 
   useEffect(() => {
+    if (!hydrated) return
+    if (initialResumeData) {
+      lastPayloadRef.current = JSON.stringify(initialResumeData)
+      hasDataRef.current = true
+    }
+
     const applyData = (data: ResumeData) => {
+      const serialized = JSON.stringify(data)
+      if (lastPayloadRef.current === serialized) return
+      lastPayloadRef.current = serialized
       hasDataRef.current = true
       setResumeData(data)
       setLoadError(false)
+      stopReadyPingRef.current?.()
+      stopReadyPingRef.current = null
       try {
-        sessionStorage.setItem("resumeData", JSON.stringify(data))
+        sessionStorage.setItem("resumeData", serialized)
       } catch {
         /* ignore */
       }
@@ -67,7 +86,9 @@ function PDFPreviewContent() {
 
     window.addEventListener("message", handleMessage)
     const stopBroadcast = subscribePdfPreviewPayload<ResumeData>("resume", applyData)
-    const stopReadyPing = startPdfPreviewReadyPing()
+    if (!hasDataRef.current) {
+      stopReadyPingRef.current = startPdfPreviewReadyPing()
+    }
     const errorTimer = window.setTimeout(() => {
       if (!hasDataRef.current) setLoadError(true)
     }, 12_000)
@@ -75,10 +96,11 @@ function PDFPreviewContent() {
     return () => {
       window.removeEventListener("message", handleMessage)
       stopBroadcast()
-      stopReadyPing()
+      stopReadyPingRef.current?.()
+      stopReadyPingRef.current = null
       window.clearTimeout(errorTimer)
     }
-  }, [])
+  }, [hydrated, initialResumeData])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -103,7 +125,11 @@ function PDFPreviewContent() {
     return () => window.removeEventListener("keydown", onKey)
   }, [fallback])
 
-  if (!resumeData) {
+  if (!hydrated) {
+    return <PdfLoading fullScreen />
+  }
+
+  if (!effectiveResumeData) {
     if (loadError) {
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-3 px-6 text-center">
@@ -137,10 +163,10 @@ function PDFPreviewContent() {
       <div className="flex-1 overflow-hidden flex print:overflow-visible print:h-auto">
         <div className="w-full h-full print:h-auto">
           <PDFViewer
-            resumeData={resumeData}
+            resumeData={effectiveResumeData}
             renderNotice="external"
             serverFilename={serverFilename}
-            onModeChange={(m) => setFallback(m === "fallback")}
+            onModeChange={handleModeChange}
           />
         </div>
       </div>

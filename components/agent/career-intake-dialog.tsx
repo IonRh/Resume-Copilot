@@ -33,6 +33,8 @@ import {
   type InterviewRoundId,
 } from "@/lib/agent/interview-rounds"
 
+const STREAM_FLUSH_MS = 80
+
 type IntakeMode = "jd" | "interview"
 
 interface Msg {
@@ -78,15 +80,43 @@ export default function CareerIntakeDialog({
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const researchResultRef = useRef("")
+  const streamBufferRef = useRef("")
+  const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 面试研究 gate 只拦截一次，避免死循环；用户随后可正常进入
   const finishGateUsedRef = useRef(false)
+
+  const flushStreamText = () => {
+    if (!streamBufferRef.current) return
+    const chunk = streamBufferRef.current
+    streamBufferRef.current = ""
+    setStreamText((prev) => prev + chunk)
+  }
+
+  const queueStreamText = (delta: string) => {
+    if (!delta) return
+    streamBufferRef.current += delta
+    if (streamTimerRef.current) return
+    streamTimerRef.current = window.setTimeout(() => {
+      streamTimerRef.current = null
+      flushStreamText()
+    }, STREAM_FLUSH_MS)
+  }
+
+  const resetStreamText = () => {
+    if (streamTimerRef.current) {
+      clearTimeout(streamTimerRef.current)
+      streamTimerRef.current = null
+    }
+    streamBufferRef.current = ""
+    setStreamText("")
+  }
 
   // 打开时初始化对话；关闭时中止流
   useEffect(() => {
     if (open) {
       setMessages([{ role: "assistant", content: intake.greeting }])
       historyRef.current = [{ role: "assistant", content: intake.greeting }]
-      setStreamText("")
+      resetStreamText()
       setInput("")
       setError(null)
       setBusy(false)
@@ -97,9 +127,17 @@ export default function CareerIntakeDialog({
       finishGateUsedRef.current = false
     } else {
       abortRef.current?.abort()
+      resetStreamText()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, defaultRoundId])
+
+  useEffect(
+    () => () => {
+      if (streamTimerRef.current) clearTimeout(streamTimerRef.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     const el = scrollRef.current
@@ -230,13 +268,13 @@ export default function CareerIntakeDialog({
     abortRef.current = controller
 
     try {
-      setStreamText("")
+      resetStreamText()
       for (let i = 0; i < 4; i++) {
         const { content, toolCalls } = await streamChat(
           [system, ...historyRef.current.slice(-20)],
           { tools: intakeTools, toolChoice: "auto" },
           controller.signal,
-          (delta) => setStreamText((p) => p + delta),
+          queueStreamText,
         )
 
         const research = toolCalls.find((c) => c.function.name === "research_company_interview")
@@ -246,7 +284,7 @@ export default function CareerIntakeDialog({
           tool_calls: research ? [research] : toolCalls.length ? toolCalls : undefined,
         })
         if (content) setMessages((m) => [...m, { role: "assistant", content }])
-        setStreamText("")
+        resetStreamText()
 
         if (research) {
           let args: Record<string, unknown> = {}
@@ -300,7 +338,7 @@ export default function CareerIntakeDialog({
       if ((err as Error)?.name !== "AbortError") {
         setError(err instanceof Error ? err.message : String(err))
       }
-      setStreamText("")
+      resetStreamText()
     } finally {
       setBusy(false)
       abortRef.current = null

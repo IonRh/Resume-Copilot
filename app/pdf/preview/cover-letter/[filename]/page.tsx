@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import PdfLoading from "@/components/pdf-loading"
 import type { CoverLetterPrintPayload } from "@/lib/cover-letter-pdf"
 import { Button } from "@/components/ui/button"
@@ -26,31 +26,50 @@ function readPrintDataFromClientStorage(): CoverLetterPrintPayload | null {
   return null
 }
 
+function subscribeHydration() {
+  return () => {}
+}
+
 function CoverLetterPDFPreviewContent() {
+  const hydrated = useSyncExternalStore(subscribeHydration, () => true, () => false)
   const [printData, setPrintData] = useState<CoverLetterPrintPayload | null>(null)
+  const initialPrintData = useMemo(() => {
+    if (!hydrated || typeof window === "undefined") return null
+    return readPrintDataFromClientStorage()
+  }, [hydrated])
   const [loadError, setLoadError] = useState(false)
   const [fallback, setFallback] = useState(false)
   const hasDataRef = useRef(false)
+  const stopReadyPingRef = useRef<(() => void) | null>(null)
+  const lastPayloadRef = useRef<string | null>(null)
   const serverFilename =
-    typeof window !== "undefined"
+    hydrated && typeof window !== "undefined"
       ? decodeURIComponent((window.location.pathname || "").split("/").filter(Boolean).pop() || "")
       : undefined
 
-  useLayoutEffect(() => {
-    const initial = readPrintDataFromClientStorage()
-    if (initial) {
-      hasDataRef.current = true
-      setPrintData(initial)
-    }
+  const effectivePrintData = printData ?? initialPrintData
+  const handleModeChange = useCallback((m: "loading" | "server" | "fallback") => {
+    setFallback(m === "fallback")
   }, [])
 
   useEffect(() => {
+    if (!hydrated) return
+    if (initialPrintData) {
+      lastPayloadRef.current = JSON.stringify(initialPrintData)
+      hasDataRef.current = true
+    }
+
     const applyData = (data: CoverLetterPrintPayload) => {
+      const serialized = JSON.stringify(data)
+      if (lastPayloadRef.current === serialized) return
+      lastPayloadRef.current = serialized
       hasDataRef.current = true
       setPrintData(data)
       setLoadError(false)
+      stopReadyPingRef.current?.()
+      stopReadyPingRef.current = null
       try {
-        sessionStorage.setItem("coverLetterPrintData", JSON.stringify(data))
+        sessionStorage.setItem("coverLetterPrintData", serialized)
       } catch {
         /* ignore */
       }
@@ -65,7 +84,9 @@ function CoverLetterPDFPreviewContent() {
 
     window.addEventListener("message", handleMessage)
     const stopBroadcast = subscribePdfPreviewPayload<CoverLetterPrintPayload>("coverLetter", applyData)
-    const stopReadyPing = startPdfPreviewReadyPing()
+    if (!hasDataRef.current) {
+      stopReadyPingRef.current = startPdfPreviewReadyPing()
+    }
     const errorTimer = window.setTimeout(() => {
       if (!hasDataRef.current) setLoadError(true)
     }, 12_000)
@@ -73,10 +94,11 @@ function CoverLetterPDFPreviewContent() {
     return () => {
       window.removeEventListener("message", handleMessage)
       stopBroadcast()
-      stopReadyPing()
+      stopReadyPingRef.current?.()
+      stopReadyPingRef.current = null
       window.clearTimeout(errorTimer)
     }
-  }, [])
+  }, [hydrated, initialPrintData])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,7 +123,11 @@ function CoverLetterPDFPreviewContent() {
     return () => window.removeEventListener("keydown", onKey)
   }, [fallback])
 
-  if (!printData) {
+  if (!hydrated) {
+    return <PdfLoading fullScreen />
+  }
+
+  if (!effectivePrintData) {
     if (loadError) {
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-3 px-6 text-center">
@@ -135,10 +161,10 @@ function CoverLetterPDFPreviewContent() {
       <div className="flex flex-1 overflow-hidden print:h-auto print:overflow-visible">
         <div className="h-full w-full print:h-auto">
           <CoverLetterPDFViewer
-            printData={printData}
+            printData={effectivePrintData}
             renderNotice="external"
             serverFilename={serverFilename}
-            onModeChange={(m) => setFallback(m === "fallback")}
+            onModeChange={handleModeChange}
           />
         </div>
       </div>
